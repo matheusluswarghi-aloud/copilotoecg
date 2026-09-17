@@ -75,6 +75,11 @@ function msEntre(p1, p2){
 }
 
 /* ---------- foto ---------- */
+function pedirFoto(fonte){
+  if (fonte === "camera") inputArquivo.setAttribute("capture", "environment");
+  else inputArquivo.removeAttribute("capture");
+  inputArquivo.click();
+}
 async function prepararFoto(file){
   const url = URL.createObjectURL(file);
   const img = new Image();
@@ -364,7 +369,7 @@ function biblioteca(){
 function ajuda(){
   return `<div class="scroll">
     <div><div class="eyebrow">Como usar</div><h2 style="margin-top:4px">Ajuda</h2></div>
-    <div class="card"><h3>A foto</h3><p class="small">Ponha o eletro numa superfície plana, com luz de lado e sem flash. Enquadre só o papel. Quanto mais perto, melhor a medida.</p></div>
+    <div class="card"><h3>A foto</h3><p class="small">Ponha o eletro numa superfície plana, com luz de lado e sem flash. Enquadre só o papel. Quanto mais perto, melhor a medida.</p><p class="small">Dá para fotografar na hora ou usar uma foto que já está no celular: são os botões <b>Câmera</b> e <b>Galeria</b>.</p></div>
     <div class="card"><h3>A calibração</h3><p class="small">Antes de medir, o app precisa saber quanto vale um quadradinho na sua foto. Você arrasta as duas bolinhas sobre cinco quadradões (1 segundo de papel) e ele aprende a escala.</p></div>
     <div class="card"><h3>O compasso</h3><p class="small">Nas etapas de frequência e de intervalos, arraste as bolinhas sobre o traçado. O app mostra a medida em milissegundos e em quadradinhos, e usa esse número para a pergunta seguinte.</p></div>
     <div class="card"><h3>O laudo</h3><p class="small">O texto final é montado com as suas medidas e as suas respostas. Confira antes de copiar. Quem lê o eletro é você.</p></div>
@@ -387,11 +392,12 @@ function telaFoto(){
   if (!c.tela){
     return `<div class="bar"><button class="back" type="button" data-ir="inicio" aria-label="Voltar">←</button><div class="t"><small>Nova leitura</small><strong>Foto do eletro</strong></div></div>
     <div class="scroll">
-      <button class="dropzone" type="button" id="escolher">
+      <button class="dropzone" type="button" data-fonte="camera">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1.4-2h5.2L16 6"/></svg>
         <strong>Fotografar o eletro</strong>
-        <span class="muted small">Ou escolher uma foto já tirada</span>
+        <span class="muted small">Abre a câmera</span>
       </button>
+      <button class="btn wide" type="button" data-fonte="galeria">Escolher uma foto já tirada</button>
       <div class="card"><h3>Para a medida sair certa</h3>
         <p class="small">Papel esticado numa superfície plana · luz de lado, sem flash · celular paralelo ao papel · enquadre só o eletro, o mais perto que der.</p></div>
       <p class="muted small">A foto fica neste aparelho. O app não envia imagem para lugar nenhum.</p>
@@ -413,7 +419,8 @@ function telaFoto(){
     <p class="muted small">Os avisos são um conferidor automático, não um veredito. Se essa é a única foto possível agora, dá para seguir — mas a medida herda o defeito da imagem.</p>
   </div>
   <div class="foot">
-    <button class="btn" type="button" id="outra">Tirar outra</button>
+    <button class="btn small" type="button" data-fonte="camera">Câmera</button>
+    <button class="btn small" type="button" data-fonte="galeria">Galeria</button>
     <button class="btn primary" type="button" data-ir="calibrar">${ruim ? "Usar assim mesmo" : "Usar esta foto"}</button>
   </div>`;
 }
@@ -453,7 +460,8 @@ function telaCalibrar(){
     <div class="tip">A escala vale só para esta foto. Cada eletro novo pede uma calibração nova, e ela leva dez segundos.</div>
   </div>
   <div class="foot">
-    <button class="btn" type="button" id="outra">Tirar outra</button>
+    <button class="btn small" type="button" data-fonte="camera">Câmera</button>
+    <button class="btn small" type="button" data-fonte="galeria">Galeria</button>
     <button class="btn primary" type="button" id="usar-cal" ${pxmm ? "" : "disabled"}>Calibrar e começar</button>
   </div>`;
 }
@@ -806,10 +814,7 @@ function desenhar(){
   });
   const idade = document.getElementById("idade");
   if (idade) idade.oninput = () => { S.cur.ctx.idade = idade.value === "" ? null : +idade.value; };
-  const escolher = document.getElementById("escolher");
-  if (escolher) escolher.onclick = () => inputArquivo.click();
-  const outra = document.getElementById("outra");
-  if (outra) outra.onclick = () => inputArquivo.click();
+  app.querySelectorAll("[data-fonte]").forEach(b => b.onclick = () => pedirFoto(b.dataset.fonte));
   ligarOpts(app);
 
   if (S.tela === "foto" && S.cur.tela) montarVisor("#visor", {modo:"livre"});
