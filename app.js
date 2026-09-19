@@ -529,7 +529,9 @@ const I = {
   olho:svg('<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
   regua:svg('<path d="M3 17 17 3l4 4L7 21z"/><path d="M8 12l2 2M11 9l2 2M14 6l2 2"/>'),
   check:svg('<path d="M5 12l5 5L20 7"/>'),
-  ecg:svg('<path d="M3 12h4l2-6 3 12 3-8 2 2h4"/>')
+  ecg:svg('<path d="M3 12h4l2-6 3 12 3-8 2 2h4"/>'),
+  guia:svg('<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 18.5A2.5 2.5 0 0 1 6.5 16H20"/><path d="M9 8h7M9 11.5h5"/>'),
+  vazio:svg('<path d="M3 12h3l2-5 3 10 3-8 2 3h5"/><path d="M4 19h16" stroke-dasharray="2 3"/>')
 };
 const marca = () => `<span class="mark"><svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 3 11 2.5-7 1.5 2H20"/></svg></span>`;
 function opt(chave, valor, rotulo, multi){
@@ -549,7 +551,7 @@ function qrsFig(tipo){
 function progresso(i){ return `<div class="prog" style="grid-template-columns:repeat(${ULTIMO},1fr)">${Array.from({length:ULTIMO}, (_, k) => `<i class="${k+1 < i ? "done" : k+1 === i ? "now" : ""}"></i>`).join("")}</div>`; }
 const dois = n => String(n).padStart(2, "0");
 function topo(passo, titulo, extra){
-  return `<div class="top"><button class="icobtn ghost" type="button" data-voltar="1" aria-label="Voltar">${I.voltar}</button>
+  return `<div class="top"><span class="ghostnum" aria-hidden="true">${dois(passo)}</span><button class="icobtn ghost" type="button" data-voltar="1" aria-label="Voltar">${I.voltar}</button>
     <span class="step-num">${dois(passo)}</span>
     <div class="t"><small>Etapa ${passo} de ${ULTIMO}${motivo() ? " · " + motivo().curto : ""}</small><strong>${titulo}</strong></div>${extra || ""}</div>`;
 }
@@ -610,7 +612,7 @@ function nav(){
   return `<nav class="nav">
     ${itens.map(([k,l,ic]) => `<button type="button" data-aba="${k}" ${S.aba===k?'aria-current="page"':""}>${ic}${l}</button>`).join("")}
     <button type="button" class="plus" data-ir="motivo">${I.mais}Nova leitura</button>
-    <button type="button" data-aba="guia" ${S.aba==="guia"?'aria-current="page"':""}><span class="orb sm"><i></i></span>Guia</button>
+    <button type="button" data-aba="guia" ${S.aba==="guia"?'aria-current="page"':""}>${I.guia}Guia</button>
   </nav>`;
 }
 function dataCurta(ms){
@@ -626,26 +628,103 @@ function inicio(){
   return `<div class="screen">
   <div class="top"><div class="brand">${marca()}<strong>Copiloto</strong></div><div class="t"></div>
     <button class="icobtn" type="button" data-aba="config" aria-label="Configurações">${I.config}</button></div>
-  <div class="scroll stagger">
+  <div class="scroll stagger com-nav">
     <div><h1>${saudacao()}</h1><p class="mute" style="margin-top:4px">Vamos interpretar um ECG?</p></div>
-    <div class="hero-orb">
-      <div class="orb"><i></i></div>
-      <p class="say">${frase()}</p>
-      <div class="chips" style="justify-content:center">
-        <span class="pill"><b>${n}</b> leitura${n === 1 ? "" : "s"}</span>
-        <span class="pill"><b>${at}</b> com atenção</span>
-        ${top ? `<span class="pill">mais comum <b>${nomeTop}</b></span>` : ""}
-      </div>
+    ${monitorHTML()}
+    <div class="stats">
+      <div class="stat"><span class="n" data-count="${n}">0</span><span class="l">leitura${n === 1 ? "" : "s"}</span></div>
+      <div class="stat"><span class="n" data-count="${at}">0</span><span class="l">com atenção</span></div>
+      <div class="stat"><span class="n" data-count="${semana()}">0</span><span class="l">esta semana</span></div>
     </div>
-    <button class="btn glow wide" type="button" data-ir="motivo" style="padding:15px">${I.ecg}Ler um eletro agora</button>
+    <button class="btn primary big wide" type="button" data-ir="motivo">${I.ecg}Ler um eletro agora</button>
+    <div class="card"><div class="sec" style="margin:0"><h3>Últimos 7 dias</h3><span class="tiny mute">${top ? "mais comum: " + nomeTop : "por dia"}</span></div>${barrasSemana()}</div>
     <div class="sec"><h3>Suas leituras</h3>${n ? `<button class="textbtn" type="button" data-aba="biblioteca">Ver todas ${I.seta}</button>` : ""}</div>
     ${n ? `<div class="rgrid">${ult.map(cardLeitura).join("")}</div>`
       : `<div class="card"><div class="empty" style="padding:14px 6px"><p class="ink2">Nenhuma leitura guardada.</p><p class="tiny">A primeira fica aqui, com o laudo e a foto. Nada sai deste aparelho.</p></div></div>`}
     <div class="card"><div class="sec" style="margin:0"><h3>Mapa de leituras</h3><span class="tiny mute">12 semanas</span></div>
       <div class="dots">${mapaDias()}</div>
       <p class="tiny mute">Cada ponto é um dia. Quanto mais claro, mais eletros lidos.</p></div>
-    <p class="tiny mute" style="text-align:center;padding:4px 10px">O Copiloto não lê o eletro por você. Quem interpreta é você; ele garante que nenhuma etapa fique para trás.</p>
+    <p class="tiny mute" style="text-align:center;padding:4px 10px">Quem interpreta é você. O Copiloto garante que nenhuma etapa fique para trás.</p>
   </div>${nav()}</div>`;
+}
+function semana(){ const d = Date.now() - 7 * 864e5; return S.leituras.filter(l => l.quando >= d).length; }
+function barrasSemana(){
+  const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+  const dias = [], nomes = ["D","S","T","Q","Q","S","S"];
+  for (let i = 6; i >= 0; i--){ const d = new Date(hoje); d.setDate(hoje.getDate() - i); dias.push({d, n:S.leituras.filter(l => mesmoDia(l.quando, d)).length}); }
+  const max = Math.max(1, ...dias.map(x => x.n));
+  return `<div class="bars">${dias.map((x, i) => `<div><span class="tr${i === 6 ? " hoje" : ""}"><i style="--h:${x.n ? Math.round(18 + 82 * x.n / max) : 4}%"></i></span><span>${nomes[x.d.getDay()]}</span></div>`).join("")}</div>`;
+}
+function monitorHTML(){
+  const u = S.leituras[0];
+  const fc = u && u.fc ? u.fc : 72;
+  const titulo = u ? u.conc : "Ritmo sinusal, 72 bpm";
+  const sub = u ? `${curtoDe(u)} · ${dataCurta(u.quando)}` : "traçado de demonstração";
+  return `<div class="hero" id="hero">
+    <div class="mon-top"><div><span class="eyebrow">${u ? "Última leitura" : "Monitor"}</span><strong>${titulo}</strong><p class="tiny mute">${sub}</p></div><span class="live"><i></i>${u ? (u.irregular ? "irregular" : "regular") : "demo"}</span></div>
+    <canvas id="mon" aria-hidden="true"></canvas>
+    <div class="mon-foot"><span class="num" data-count="${fc}">0<span class="u">bpm</span></span><span class="pill">${u ? (u.qrsLargo ? "QRS largo" : "QRS estreito") : "25 mm/s"}</span></div>
+  </div>`;
+}
+/* monitor: traçado varrendo como num monitor de beira de leito, derivado da última leitura */
+function montarMonitor(){
+  const c = document.getElementById("mon");
+  if (!c) return;
+  const u = S.leituras[0], fc = u && u.fc ? u.fc : 72, largo = !!(u && u.qrsLargo), irr = !!(u && u.irregular);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const W = c.clientWidth || 340, H = 118;
+  c.width = W * dpr; c.height = H * dpr;
+  const ctx = c.getContext("2d"); ctx.scale(dpr, dpr);
+  const RR = 60000 / fc, pxMs = W / 3200; // 3,2 s na tela
+  const forma = t => {
+    let v = 0;
+    if (t >= 0 && t <= 90) v += .12 * Math.sin(Math.PI * t / 90);
+    const q0 = 160, qd = largo ? 130 : 80, u2 = t - q0;
+    if (u2 >= 0 && u2 <= qd){ const pts = [[0,0],[.15,-.12],[.4,1],[.65,-.28],[1,0]]; for (let i = 0; i < 4; i++){ const [a,va] = pts[i], [b,vb] = pts[i+1]; const A = a*qd, B = b*qd; if (u2 >= A && u2 <= B){ v += va + (vb-va)*(u2-A)/(B-A); break; } } }
+    const t0 = q0 + qd + 90; if (t >= t0 && t <= t0 + 200) v += .22 * Math.pow(Math.sin(Math.PI * (t - t0) / 200), 1.3);
+    return v;
+  };
+  const volt = ms => { let v = 0, acc = 0, k = 0; while (acc < ms + RR){ const rr = irr ? RR * (1 + (((k * 7919) % 11) - 5) / 22) : RR; const t = ms - acc; if (t >= 0 && t < rr) v += forma(t); acc += rr; k++; if (k > 400) break; } return v; };
+  const base = H * .6, amp = H * .34;
+  const reduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const grade = () => { ctx.strokeStyle = "rgba(255,255,255,.05)"; ctx.lineWidth = 1; for (let x = 0; x < W; x += 20){ ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } for (let y = 0; y < H; y += 20){ ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); } };
+  const cor = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#fff";
+  let cursor = 0, t0 = performance.now();
+  const desenharTudo = (ate) => {
+    ctx.clearRect(0, 0, W, H); grade();
+    ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.strokeStyle = cor;
+    ctx.shadowColor = "rgba(255,255,255,.35)"; ctx.shadowBlur = 6;
+    ctx.beginPath();
+    for (let x = 0; x <= ate; x += 2){ const y = base - volt(x / pxMs) * amp; if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+    ctx.stroke(); ctx.shadowBlur = 0;
+  };
+  if (reduzido){ desenharTudo(W); return; }
+  const passo = () => {
+    if (!c.isConnected) return;
+    const el = performance.now() - t0;
+    cursor = (el * pxMs) % W;
+    ctx.clearRect(0, 0, W, H); grade();
+    ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.strokeStyle = cor; ctx.shadowColor = "rgba(255,255,255,.35)"; ctx.shadowBlur = 6;
+    // à esquerda do cursor: a volta atual; à direita: a volta anterior, mais apagada
+    const volta = Math.floor(el * pxMs / W);
+    const tracar = (x0, x1, off, alpha) => { ctx.globalAlpha = alpha; ctx.beginPath(); for (let x = x0; x <= x1; x += 2){ const ms = (x + off) / pxMs; const y = base - volt(ms) * amp; if (x === x0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.stroke(); };
+    tracar(0, cursor, volta * W, 1);
+    if (volta > 0) tracar(Math.min(W, cursor + 22), W, (volta - 1) * W, .35);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    ctx.fillStyle = cor; ctx.beginPath(); ctx.arc(cursor, base - volt((cursor + volta * W) / pxMs) * amp, 2.6, 0, 7); ctx.fill();
+    requestAnimationFrame(passo);
+  };
+  requestAnimationFrame(passo);
+}
+function animarNumeros(){
+  const reduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  app.querySelectorAll("[data-count]").forEach(el => {
+    const alvo = +el.dataset.count, sufixo = el.querySelector(".u") ? el.querySelector(".u").outerHTML : "";
+    if (reduzido || !alvo){ el.innerHTML = alvo + sufixo; return; }
+    const t0 = performance.now(), dur = 700;
+    const tick = () => { const p = Math.min(1, (performance.now() - t0) / dur), e = 1 - Math.pow(1 - p, 3); el.innerHTML = Math.round(alvo * e) + sufixo; if (p < 1 && el.isConnected) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  });
 }
 function cardLeitura(l){
   return `<button class="card grad ${l.alerta ? "pulso" : "vital"} rcard" type="button" data-abrir="${l.id}">
@@ -664,7 +743,7 @@ function biblioteca(){
   const lista = filtradas(), motivos = contagemMotivos();
   return `<div class="screen">
   <div class="top"><div class="t"><small>Só você vê</small><strong>Biblioteca</strong></div><span class="pill"><b>${S.leituras.length}</b> leitura${S.leituras.length === 1 ? "" : "s"}</span></div>
-  <div class="scroll stagger">
+  <div class="scroll stagger com-nav">
     <label class="search">${I.busca}<input type="search" id="busca" placeholder="Buscar no laudo" value="${S.filtro.busca.replace(/"/g, "&quot;")}" autocomplete="off"></label>
     <div class="hscroll">
       <button class="chip" type="button" data-fmotivo="todas" aria-pressed="${S.filtro.motivo === "todas"}">Todas</button>
@@ -672,7 +751,7 @@ function biblioteca(){
       ${motivos.map(([k, n]) => `<button class="chip" type="button" data-fmotivo="${k}" aria-pressed="${S.filtro.motivo === k}">${(MOTIVOS.find(m => m.k === k) || {curto:k}).curto} · ${n}</button>`).join("")}
     </div>
     ${lista.length ? `<div class="rlist">${lista.map(itemLeitura).join("")}</div>`
-      : `<div class="empty"><div class="orb"><i></i></div><p class="ink2">${S.leituras.length ? "Nada com esse filtro." : "Ainda não há leituras salvas."}</p><p class="tiny">${S.leituras.length ? "Tente outra busca ou limpe os filtros." : "Cada leitura guarda o laudo, as respostas e a foto, só neste celular."}</p></div>`}
+      : `<div class="empty">${I.vazio}<p class="ink2">${S.leituras.length ? "Nada com esse filtro." : "Ainda não há leituras salvas."}</p><p class="tiny">${S.leituras.length ? "Tente outra busca ou limpe os filtros." : "Cada leitura guarda o laudo, as respostas e a foto, só neste celular."}</p></div>`}
   </div>${nav()}</div>`;
 }
 function itemLeitura(l){
@@ -719,8 +798,8 @@ function guia(){
     corpo = `<div class="card"><h3>Termos usados no app</h3><div class="gloss">${g.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div><p class="tiny mute">Definições como aparecem no roteiro do Dr. Vitor.</p></div>`;
   }
   return `<div class="screen">
-  <div class="top"><div class="t"><small>Copiloto</small><strong>Guia</strong></div><span class="orb sm"><i></i></span></div>
-  <div class="scroll stagger">
+  <div class="top"><div class="t"><small>Copiloto</small><strong>Guia</strong></div>${I.guia.replace("<svg", '<svg style="width:22px;height:22px;color:var(--mute)"')}</div>
+  <div class="scroll stagger com-nav">
     <div class="hscroll">${t("calc","Calculadoras")}${t("uso","Como usar")}${t("gloss","Termos")}</div>
     ${corpo}
   </div>${nav()}</div>`;
@@ -735,13 +814,13 @@ function config(){
     <div class="card"><div class="field"><label for="p-nome">Como o Copiloto deve chamar você</label><input type="text" id="p-nome" value="${(p.nome || "").replace(/"/g, "&quot;")}" placeholder="Dr. Vitor" autocomplete="off"></div>
       <p class="tiny mute">Aparece na saudação e, se quiser, no fim do laudo.</p></div>
     <div class="card">
-      <div class="toggle"><div class="l"><strong>Assinar o laudo</strong><span>Acrescenta seu nome e a data ao copiar</span></div><button class="sw" type="button" role="switch" aria-checked="${!!p.assinatura}" data-pref="assinatura"></button></div>
-      <div class="toggle"><div class="l"><strong>Tema claro</strong><span>Para ambientes muito iluminados</span></div><button class="sw" type="button" role="switch" aria-checked="${p.tema === "claro"}" data-pref="tema"></button></div>
+      <div class="toggle"><div class="l"><strong>Assinar o laudo</strong><span>Acrescenta seu nome e a data ao copiar</span></div><button class="switch" type="button" role="switch" aria-checked="${!!p.assinatura}" data-pref="assinatura"></button></div>
+      <div class="toggle"><div class="l"><strong>Tema claro</strong><span>Para ambientes muito iluminados</span></div><button class="switch" type="button" role="switch" aria-checked="${p.tema === "claro"}" data-pref="tema"></button></div>
     </div>
     <div class="card"><h3>Dados</h3><p class="small mute">${n} leitura${n === 1 ? "" : "s"} guardada${n === 1 ? "" : "s"} neste aparelho. Nada é enviado a servidor.</p>
       <button class="btn danger" type="button" data-apagar-tudo="1" ${n ? "" : "disabled"}>${I.lixo}Apagar todas as leituras</button>
       ${S.confirmaApagar ? `${ins("bad", "Tem certeza?", `Isso apaga as ${n} leituras e as fotos. Não dá para desfazer.`)}<div class="row2"><button class="btn" type="button" data-cancela-apagar="1">Cancelar</button><button class="btn danger" type="button" data-confirma-apagar="1">Apagar tudo</button></div>` : ""}</div>
-    <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 3 · roteiro clínico do Dr. Vitor Coutinho</p>
+    <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 4 · roteiro clínico do Dr. Vitor Coutinho</p>
   </div></div>`;
 }
 function assinatura(){
@@ -754,7 +833,7 @@ function assinatura(){
 function telaMotivo(){
   const m = motivo();
   return `<div class="screen">
-  <div class="top"><button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Voltar">${I.voltar}</button><span class="step-num">01</span><div class="t"><small>Etapa 1 de ${ULTIMO}</small><strong>Olhe para o paciente</strong></div></div>
+  <div class="top"><span class="ghostnum" aria-hidden="true">01</span><button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Voltar">${I.voltar}</button><span class="step-num">01</span><div class="t"><small>Etapa 1 de ${ULTIMO}</small><strong>Olhe para o paciente</strong></div></div>
   ${progresso(1)}
   <div class="scroll stagger" id="seq-scroll">
     <p class="q">O que motivou este ECG?</p>
@@ -960,7 +1039,8 @@ const ETAPAS = {
 
 function telaSeq(){
   const i = S.cur.passo, v = ETAPAS[i]();
-  return `<div class="screen">
+  const dir = S.dir || ""; S.dir = "";
+  return `<div class="screen ${dir}">
   ${topo(i, PASSOS[i], `${S.cur.tela ? `<button class="icobtn" type="button" data-ver="1" aria-label="Ver o eletro">${I.olho}</button>` : ""}<button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Sair">${I.fechar}</button>`)}
   ${progresso(i)}
   <div class="scroll stagger" id="seq-scroll">${v.html}</div>
@@ -1064,6 +1144,7 @@ function ligarOpts(raiz){
     }
     atualizarWiz();
     manterRolagem(desenhar);
+    const novo = app.querySelector(`[data-ans="${k}"][data-val="${v}"]`); if (novo) novo.classList.add("pop");
   });
 }
 function miniatura(){
@@ -1107,7 +1188,7 @@ function desenhar(){
   const telas = { inicio:() => ({inicio, biblioteca, guia, config}[S.aba] || inicio)(),
     motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo };
   app.innerHTML = (telas[S.tela] || telas.inicio)();
-  escalonar();
+  escalonar(); animarNumeros(); montarMonitor();
 
   app.querySelectorAll("[data-aba]").forEach(b => b.onclick = () => irAba(b.dataset.aba));
   app.querySelectorAll("[data-ir]").forEach(b => b.onclick = () => irPara(b.dataset.ir));
@@ -1125,7 +1206,7 @@ function desenhar(){
   app.querySelectorAll("[data-recalibrar]").forEach(b => b.onclick = () => { S.cur.escala = null; S.cur.pontos.fc = null; S.cur.pontos.qrs = null; S.vista = null; soltarVisor(); desenhar(); });
   app.querySelectorAll("[data-voltar]").forEach(b => b.onclick = () => {
     if (S.tela === "laudo"){ S.tela = "seq"; S.cur.passo = ULTIMO; }
-    else if (S.cur.passo > 2) S.cur.passo--;
+    else if (S.cur.passo > 2){ S.cur.passo--; S.dir = "back"; }
     else S.tela = "foto";
     soltarVisor(); desenhar();
   });
@@ -1213,7 +1294,7 @@ function desenhar(){
   if (S.tela === "seq"){
     const b = document.getElementById("proxima");
     if (b) b.onclick = () => {
-      if (S.cur.passo < ULTIMO){ S.cur.passo++; desenhar(); const sc = document.getElementById("seq-scroll"); if (sc) sc.scrollTop = 0; }
+      if (S.cur.passo < ULTIMO){ S.cur.passo++; S.dir = "fwd"; desenhar(); const sc = document.getElementById("seq-scroll"); if (sc) sc.scrollTop = 0; }
       else { S.tela = "laudo"; desenhar(); }
     };
   }
