@@ -133,3 +133,23 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .barra.warn i{background:var(--warn)}
 .barra.bad i{background:var(--accent)}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+/* versão 2 */
+.visor.tudo{flex:1;min-height:0}
+.pendente{display:flex;gap:8px;align-items:flex-start;border:1.5px dashed var(--line-strong);border-radius:10px;padding:9px 11px;font-size:.8rem;color:var(--muted)}
+.pendente .tag{flex:none}
+.card.small p + p{margin-top:2px}
+.orientacao{border-left:3px solid var(--accent)}
+.orientacao p{font-size:.92rem}
+.terr p{font-family:var(--mono);font-size:.8rem}
+.ajuda-btn{align-self:flex-start;color:var(--accent);border-color:transparent;padding-left:0}
+.linha{display:flex;align-items:center;gap:8px}
+.linha input[type=number]{appearance:none;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);border-radius:10px;padding:10px 12px;font:600 1rem var(--mono);width:110px}
+.linha .u{font-family:var(--mono);color:var(--muted);font-size:.85rem;min-width:62px}
+.calc{display:flex;flex-direction:column;gap:5px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.calc label{font-size:.78rem;color:var(--muted)}
+.figs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.figs figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:2px;background:var(--app);border-radius:8px;padding:6px 2px}
+.figs figcaption{font-family:var(--mono);font-size:.7rem;color:var(--ink-2)}
+.fig{width:100%;max-width:70px;height:auto}
+h3{margin-top:2px}
