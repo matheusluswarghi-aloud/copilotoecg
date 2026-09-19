@@ -1,8 +1,8 @@
 "use strict";
-/* Copiloto de ECG — versão 2
-   O roteiro das etapas segue o documento do Dr. Vitor ("Ferramenta ECG - Protótipo", 18/09/2026).
+/* Copiloto de ECG — versão 3
+   Roteiro clínico: documento do Dr. Vitor ("Ferramenta ECG - Protótipo", 18/09/2026).
    Tudo roda no aparelho: a foto do eletro nunca sai do celular.
-   Fotos ficam no IndexedDB, leituras no localStorage. */
+   Fotos no IndexedDB; leituras e preferências no localStorage. */
 (function(){
 
 const app = document.getElementById("app");
@@ -10,7 +10,7 @@ const inputArquivo = document.getElementById("arquivo");
 const MS_POR_MM = 40; // papel a 25 mm/s
 
 /* ---------- guardar no aparelho ---------- */
-const DB_NOME = "copiloto", LOJA = "fotos", CHAVE = "copiloto.leituras";
+const DB_NOME = "copiloto", LOJA = "fotos", CHAVE = "copiloto.leituras", CHAVE_PREFS = "copiloto.prefs";
 let dbp = null;
 function db(){
   if (dbp) return dbp;
@@ -29,8 +29,8 @@ async function guardarFoto(id, blob){
 async function apagarFoto(id){
   try { const b = await db(); await new Promise(ok => { const t = b.transaction(LOJA, "readwrite"); t.objectStore(LOJA).delete(id); t.oncomplete = ok; t.onerror = ok; }); } catch(_){}
 }
-function lerLeituras(){ try { return JSON.parse(localStorage.getItem(CHAVE) || "[]"); } catch(_){ return []; } }
-function gravarLeituras(l){ try { localStorage.setItem(CHAVE, JSON.stringify(l)); } catch(_){} }
+const lerJSON = (k, padrao) => { try { return JSON.parse(localStorage.getItem(k)) || padrao; } catch(_){ return padrao; } };
+const gravarJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(_){} };
 
 /* ---------- estado ---------- */
 function nova(){
@@ -39,39 +39,46 @@ function nova(){
     pontos:{cal:null, fc:null, qrs:null},
     passo:2, r:{}, salva:false };
 }
-const S = { tela:"inicio", aba:"inicio", cur:nova(), leituras:lerLeituras(), visor:null, vista:null, detalhe:null, aberto:{}, medir:null };
+const S = {
+  tela:"inicio", aba:"inicio", cur:nova(), leituras:lerJSON(CHAVE, []),
+  prefs:Object.assign({nome:"", assinatura:true, tema:"escuro"}, lerJSON(CHAVE_PREFS, {})),
+  visor:null, vista:null, detalhe:null, aberto:{}, medir:null, calc:{},
+  filtro:{busca:"", motivo:"todas", atencao:false}, guiaAba:"calc"
+};
+function aplicarTema(){ document.documentElement.setAttribute("data-theme", S.prefs.tema === "claro" ? "light" : "dark"); }
+aplicarTema();
 
 /* ---------- o conteúdo do Dr. Vitor ---------- */
 const MOTIVOS = [
-  { k:"dor", nome:"Dor torácica", texto:[
+  { k:"dor", nome:"Dor torácica", curto:"Dor torácica", texto:[
     "Em um paciente com dor torácica, uma das principais condições que não podemos deixar passar é isquemia miocárdica aguda.",
     "Durante sua leitura, procure ativamente alterações de ST e onda T, avalie sua distribuição em derivações contíguas e lembre-se de que nem todo quadro de oclusão coronariana se apresenta com o supra de ST clássico.",
     "Não procure tudo de uma vez. Siga a sequência. Vamos voltar a esses pontos no momento certo."]},
-  { k:"palp", nome:"Palpitação / taquicardia", texto:[
+  { k:"palp", nome:"Palpitação / taquicardia", curto:"Palpitação", texto:[
     "Diante de palpitações ou taquicardia, primeiro queremos entender como esse coração está sendo ativado.",
     "Durante a leitura, três informações serão especialmente importantes: presença de onda P, largura do QRS e regularidade do ritmo.",
     "Essas respostas vão organizar o raciocínio sobre a taquiarritmia. Siga a sequência."]},
-  { k:"bradi", nome:"Bradicardia", texto:[
+  { k:"bradi", nome:"Bradicardia", curto:"Bradicardia", texto:[
     "Diante de bradicardia, não basta saber que a frequência está baixa.",
     "Precisamos entender de onde vem o ritmo e como o estímulo atrial está sendo conduzido aos ventrículos.",
     "Durante a leitura, tenha atenção especial às ondas P, relação P-QRS e intervalo PR. Siga a sequência."]},
-  { k:"sincope", nome:"Síncope / pré-síncope", texto:[
+  { k:"sincope", nome:"Síncope / pré-síncope", curto:"Síncope", texto:[
     "Diante de síncope, o ECG pode trazer pistas importantes de uma causa arrítmica.",
     "Durante a leitura, tenha atenção especial à frequência, ritmo, distúrbios de condução, intervalo QT e outros padrões associados a risco arrítmico.",
     "Não procure tudo de uma vez. Siga a sequência."]},
-  { k:"disp", nome:"Dispneia", texto:[
+  { k:"disp", nome:"Dispneia", curto:"Dispneia", texto:[
     "Na dispneia, o ECG raramente deve ser interpretado isoladamente.",
     "Ele pode trazer pistas de isquemia, arritmias, sobrecarga das câmaras cardíacas, bloqueio de ramo, além de alterações que, dentro do contexto adequado, podem contribuir para determinadas hipóteses, como no caso de TEP.",
     "Siga a sequência e depois integre os achados ao quadro clínico."]},
-  { k:"metab", nome:"Alteração eletrolítica / metabólica", texto:[
+  { k:"metab", nome:"Alteração eletrolítica / metabólica", curto:"Metabólica", texto:[
     "Alterações metabólicas podem modificar diferentes componentes do ECG.",
     "Durante a leitura, observe especialmente ondas T, duração do QRS, intervalo QT e onda U, sempre interpretando o traçado junto aos dados laboratoriais e ao contexto clínico.",
     "Siga a sequência."]},
-  { k:"rotina", nome:"Assintomático / rotina", texto:[
+  { k:"rotina", nome:"Assintomático / rotina", curto:"Rotina", texto:[
     "Mesmo sem uma queixa aguda, todo ECG merece uma leitura sistemática.",
     "O objetivo aqui é reconhecer o ritmo, avaliar condução, eixo, intervalos, QRS e repolarização, identificando alterações que mereçam correlação clínica.",
     "Siga a sequência completa."]},
-  { k:"outro", nome:"Outro motivo", texto:[
+  { k:"outro", nome:"Outro motivo", curto:"Outro", texto:[
     "Quando não há uma das queixas anteriores, mantenha uma leitura sistemática e evite tentar encaixar o ECG precocemente em um diagnóstico.",
     "Siga uma sequência clara de análise. Ao final, volte ao paciente e integre os achados ao contexto clínico."]}
 ];
@@ -102,12 +109,11 @@ function eixo(){
 }
 function faixaFC(){ const f = R().fc; if (!f) return null; return f > 100 ? "alta" : f < 50 ? "baixa" : "normal"; }
 
-/* Etapa 6: parte do que o médico já respondeu e só pergunta o que falta.
-   Devolve {html, pronto, res:{t, d, k}, extra} */
+/* Etapa 6: parte do que o médico já respondeu e só pergunta o que falta. */
 function arritmia(){
   const r = R(), fc = r.fc, reg = r.reg, sin = sinusal(), faixa = faixaFC();
   const partes = [];
-  const q = (txt) => partes.push(`<p class="q" style="font-size:1rem">${txt}</p>`);
+  const q = txt => partes.push(`<p class="q sm">${txt}</p>`);
   const fim = (res, extra) => ({html:partes.join(""), pronto:true, res, extra});
   const falta = () => ({html:partes.join(""), pronto:false});
   if (sin === null || !fc || !reg) return falta();
@@ -116,7 +122,7 @@ function arritmia(){
     const res = faixa === "alta" ? {t:"Taquicardia sinusal", d:`Ritmo sinusal com FC de ${fc} bpm.`, k:"warn"}
       : faixa === "baixa" ? {t:"Bradicardia sinusal", d:`Ritmo sinusal com FC de ${fc} bpm.`, k:"warn"}
       : {t:"Ritmo sinusal", d:`FC de ${fc} bpm.`, k:"ok"};
-    partes.push(alerta(res.k, "✓ " + res.t, res.d));
+    partes.push(ins(res.k, res.t, res.d));
     q("Há batimentos diferentes do ritmo habitual?");
     partes.push(`<div class="opts">${opt("extra","nao","Não")}${opt("extra","sim","Sim")}</div>`);
     if (!r.extra) return falta();
@@ -125,19 +131,19 @@ function arritmia(){
     partes.push(`<div class="opts">${opt("extraQrs","estreito","Estreito")}${opt("extraQrs","largo","Largo")}</div>`);
     if (!r.extraQrs) return falta();
     const ex = r.extraQrs === "estreito" ? "Provável extrassístole supraventricular" : "Provável extrassístole ventricular";
-    partes.push(alerta("warn", ex, ""));
+    partes.push(ins("warn", ex, ""));
     return fim(res, ex);
   }
 
-  partes.push(`<div class="card small">O Copiloto já sabe: <b>ritmo não sinusal</b>, <b>${reg}</b>, <b>FC ${fc} bpm</b>.</div>`);
+  partes.push(`<div class="chips"><span class="chip info">ritmo <b>não sinusal</b></span><span class="chip info"><b>${reg}</b></span><span class="chip info">FC <b>${fc}</b> bpm</span></div>`);
 
   const perguntaQRS = () => {
     q("O QRS é estreito ou largo?");
     partes.push(`<div class="opts">${opt("qrs","estreito","Estreito — menor que 120 ms")}${opt("qrs","largo","Largo — 120 ms ou mais")}</div>`);
-    partes.push(ajudaBotao("medirqrs", "Não sei medir o QRS"));
+    partes.push(ajuda("medirqrs", "Não sei medir o QRS"));
     if (S.aberto.medirqrs){
-      partes.push(`<div class="card small">
-        ${S.cur.tela ? `<p>Meça o QRS com a régua na foto, do começo ao fim do complexo. O app diz se passa de 120 ms (3 quadradinhos).</p><button class="btn" type="button" data-medir="qrs">Medir o QRS na foto</button>`
+      partes.push(`<div class="helpbox">
+        ${S.cur.tela ? `<p>Meça o QRS com a régua na foto, do começo ao fim do complexo. O app diz se passa de 120 ms (3 quadradinhos).</p><button class="btn small" type="button" data-medir="qrs">${I.regua}Medir o QRS na foto</button>`
           : `<p>Conte os quadradinhos do começo ao fim do QRS: a partir de 3 quadradinhos (120 ms), ele é largo.</p>`}
         ${pendente("Orientação do Dr. Vitor sobre como medir o QRS")}
       </div>`);
@@ -146,7 +152,7 @@ function arritmia(){
   };
 
   if (faixa === "alta"){
-    partes.push(alerta("warn", "Vamos caracterizar a taquiarritmia", ""));
+    partes.push(ins("info", "Vamos caracterizar a taquiarritmia", ""));
     if (!perguntaQRS()) return falta();
     if (r.qrs === "estreito" && reg === "regular"){
       q("Você identifica:");
@@ -154,7 +160,7 @@ function arritmia(){
       if (!r.tq) return falta();
       const res = {flutter:{t:"Flutter atrial"}, patrial:{t:"Taquicardia atrial"}, nenhum:{t:"Taquicardia supraventricular"}}[r.tq];
       res.d = `FC ${fc} bpm.`; res.k = "warn";
-      partes.push(alerta(res.k, res.t, res.d));
+      partes.push(ins(res.k, res.t, res.d));
       return fim(res);
     }
     if (r.qrs === "estreito"){
@@ -163,34 +169,34 @@ function arritmia(){
       if (!r.pind) return falta();
       const res = r.pind === "nao" ? {t:"Fibrilação atrial de alta resposta ventricular", d:`FC ${fc} bpm.`, k:"warn"}
         : {t:"Taquicardia irregular com ondas P individualizadas", d:"Considere taquicardia atrial multifocal ou extrassístoles atriais frequentes como causa de irregularidade.", k:"warn"};
-      partes.push(alerta(res.k, res.t, res.d));
+      partes.push(ins(res.k, res.t, res.d));
       return fim(res);
     }
     if (reg === "regular"){
       const res = {t:"Taquicardia regular de QRS largo", d:"Considere taquicardia ventricular até que se prove o contrário.", k:"bad"};
-      partes.push(alerta(res.k, "⚠️ " + res.t, res.d));
+      partes.push(ins(res.k, res.t, res.d));
       return fim(res);
     }
     const res = {t:"Taquicardia irregular de QRS largo", d:"Pense principalmente em: fibrilação atrial com aberrância ou bloqueio de ramo · fibrilação atrial pré-excitada · taquicardia ventricular polimórfica.", k:"bad"};
-    partes.push(alerta(res.k, "⚠️ " + res.t, res.d));
+    partes.push(ins(res.k, res.t, res.d));
     return fim(res);
   }
 
   if (faixa === "baixa"){
-    partes.push(alerta("warn", "Vamos caracterizar a bradiarritmia", ""));
+    partes.push(ins("info", "Vamos caracterizar a bradiarritmia", ""));
     q("Tem onda P?");
     partes.push(`<div class="opts">${opt("temP","nao","Não")}${opt("temP","sim","Sim")}</div>`);
     if (!r.temP) return falta();
     if (r.temP === "nao"){
       if (reg === "irregular"){
         const res = {t:"Considerar fibrilação atrial com baixa resposta ventricular", d:"Ritmo irregular, sem ondas P individualizadas.", k:"warn"};
-        partes.push(alerta(res.k, res.t, res.d));
+        partes.push(ins(res.k, res.t, res.d));
         return fim(res);
       }
       if (!perguntaQRS()) return falta();
       const res = r.qrs === "estreito" ? {t:"Considerar escape juncional", d:`Ritmo regular, sem onda P, QRS estreito, FC ${fc} bpm.`, k:"warn"}
         : {t:"Considerar escape ventricular", d:`Ritmo regular, sem onda P, QRS largo, FC ${fc} bpm.`, k:"bad"};
-      partes.push(alerta(res.k, res.t, res.d));
+      partes.push(ins(res.k, res.t, res.d));
       return fim(res);
     }
     q("P e QRS têm relação?");
@@ -198,12 +204,12 @@ function arritmia(){
     if (!r.rel) return falta();
     if (r.rel === "nao"){
       const res = {t:"BAV total", d:"P e QRS sem relação entre si.", k:"bad"};
-      partes.push(alerta(res.k, res.t, res.d));
+      partes.push(ins(res.k, res.t, res.d));
       return fim(res);
     }
     if (r.rel === "todas"){
       const res = {t:"Considerar ritmo atrial ectópico", d:"P não sinusal com bradicardia, todas conduzindo 1:1.", k:"warn"};
-      partes.push(alerta(res.k, res.t, res.d));
+      partes.push(ins(res.k, res.t, res.d));
       return fim(res);
     }
     q("Como as P deixam de conduzir?");
@@ -211,18 +217,17 @@ function arritmia(){
     if (!r.bav) return falta();
     const res = {m1:{t:"BAV de 2º grau Mobitz I", k:"warn"}, m2:{t:"BAV de 2º grau Mobitz II", k:"bad"}, "21":{t:"BAV 2:1", k:"bad"}, avancado:{t:"BAV avançado", k:"bad"}}[r.bav];
     res.d = `FC ${fc} bpm.`;
-    partes.push(alerta(res.k, res.t, res.d));
+    partes.push(ins(res.k, res.t, res.d));
     return fim(res);
   }
 
-  // não sinusal, FC de 50 a 100
   if (reg === "irregular"){
     q("Você identifica ondas P individualizadas?");
     partes.push(`<div class="opts">${opt("pind","nao","Não")}${opt("pind","sim","Sim")}</div>`);
     if (!r.pind) return falta();
     const res = r.pind === "nao" ? {t:"Padrão compatível com fibrilação atrial", d:`Ritmo irregular, sem ondas P individualizadas, FC ${fc} bpm.`, k:"warn"}
       : {t:"Ritmo irregular com atividade atrial identificável", d:"Considere extrassístoles atriais frequentes ou atividade atrial multifocal.", k:"warn"};
-    partes.push(alerta(res.k, res.t, res.d));
+    partes.push(ins(res.k, res.t, res.d));
     return fim(res);
   }
   q("Você identifica ondas P não sinusais?");
@@ -230,18 +235,18 @@ function arritmia(){
   if (!r.pns) return falta();
   if (r.pns === "sim"){
     const res = {t:"Considerar ritmo atrial ectópico", d:`FC ${fc} bpm.`, k:"warn"};
-    partes.push(alerta(res.k, res.t, res.d));
+    partes.push(ins(res.k, res.t, res.d));
     return fim(res);
   }
   if (!perguntaQRS()) return falta();
   const res = r.qrs === "estreito" ? {t:"Considerar ritmo juncional", d:`QRS estreito, FC ${fc} bpm.`, k:"warn"}
     : {t:"Considerar ritmo idioventricular", d:`QRS largo, FC ${fc} bpm.`, k:"warn"};
-  partes.push(alerta(res.k, res.t, res.d));
+  partes.push(ins(res.k, res.t, res.d));
   return fim(res);
 }
 
 const PADROES = [["wellens","Padrão de Wellens"],["dewinter","Padrão de de Winter"],["aslanger","Padrão de Aslanger"],["avr","Infra difuso de ST + supra em aVR"],["hiper","Ondas T hiperagudas"]];
-const TERR = [["inf","Inferior: DII · DIII · aVF"],["lat","Lateral: DI · aVL · V5 · V6"],["ant","Anterior/Septal: V1 · V2 · V3 · V4"]];
+const TERR = [["inf","Inferior","DII · DIII · aVF"],["lat","Lateral","DI · aVL · V5 · V6"],["ant","Anterior/Septal","V1 · V2 · V3 · V4"]];
 const PAREDE = {inf:"inferior", lat:"lateral", ant:"anterior/septal"};
 function isquemia(){
   const r = R(), m = r.isq || [];
@@ -441,7 +446,7 @@ class Visor{
   desenharCompasso(){
     const c = this.ctx, css = getComputedStyle(document.documentElement);
     const a = this.paraTela(this.pontos[0]), b = this.paraTela(this.pontos[1]);
-    const cor = (this.modo === "calibrar" ? css.getPropertyValue("--cal-2") : css.getPropertyValue("--cal")).trim() || "#E8433B";
+    const cor = (this.modo === "calibrar" ? css.getPropertyValue("--cal-2") : css.getPropertyValue("--cal")).trim() || "#FF6A7A";
     const perp = {x:-Math.sin(this.v.giro), y:Math.cos(this.v.giro)};
     const L = Math.max(this.larg, this.alt);
     c.save();
@@ -453,11 +458,11 @@ class Visor{
     const txt = this.rotulo();
     if (txt){
       const m = {x:(a.x+b.x)/2, y:(a.y+b.y)/2 - 22};
-      c.font = "700 15px ui-monospace, Menlo, monospace";
-      const w = c.measureText(txt).width + 16;
-      c.fillStyle = "rgba(10,12,16,.85)";
+      c.font = "500 15px ui-monospace, Menlo, monospace";
+      const w = c.measureText(txt).width + 18;
+      c.fillStyle = "rgba(8,8,10,.86)";
       c.beginPath();
-      if (c.roundRect) c.roundRect(m.x - w/2, m.y - 15, w, 26, 13); else c.rect(m.x - w/2, m.y - 15, w, 26);
+      if (c.roundRect) c.roundRect(m.x - w/2, m.y - 15, w, 28, 14); else c.rect(m.x - w/2, m.y - 15, w, 28);
       c.fill();
       c.fillStyle = "#fff"; c.textAlign = "center"; c.textBaseline = "middle";
       c.fillText(txt, m.x, m.y - 1);
@@ -505,144 +510,301 @@ function lerCalibracao(){
 }
 
 /* ---------- pedaços de interface ---------- */
+const svg = (d, extra) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra || ""}>${d}</svg>`;
+const I = {
+  casa:svg('<path d="M4 11.5 12 4l8 7.5"/><path d="M6 10.5V20h12v-9.5"/>'),
+  lista:svg('<path d="M4 6h16M4 12h10M4 18h13"/>'),
+  mais:svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'),
+  voltar:svg('<path d="M15 5l-7 7 7 7"/>'),
+  fechar:svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  config:svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  busca:svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>'),
+  seta:svg('<path d="M9 6l6 6-6 6"/>'),
+  maisPeq:svg('<path d="M12 6v12M6 12h12"/>'),
+  camera:svg('<rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="12" cy="13.5" r="3.4"/><path d="M8 7l1.4-2h5.2L16 7"/>'),
+  galeria:svg('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>'),
+  copiar:svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>'),
+  salvar:svg('<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>'),
+  lixo:svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
+  olho:svg('<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  regua:svg('<path d="M3 17 17 3l4 4L7 21z"/><path d="M8 12l2 2M11 9l2 2M14 6l2 2"/>'),
+  check:svg('<path d="M5 12l5 5L20 7"/>'),
+  ecg:svg('<path d="M3 12h4l2-6 3 12 3-8 2 2h4"/>')
+};
+const marca = () => `<span class="mark"><svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 3 11 2.5-7 1.5 2H20"/></svg></span>`;
 function opt(chave, valor, rotulo, multi){
   const atual = R()[chave];
   const on = multi ? (atual || []).includes(valor) : atual === valor;
-  return `<button type="button" class="opt${multi ? " multi" : ""}" data-ans="${chave}" data-val="${valor}" data-multi="${multi ? 1 : 0}" aria-pressed="${on}">${rotulo}</button>`;
+  return `<button type="button" class="opt${multi ? " multi" : ""}" data-ans="${chave}" data-val="${valor}" data-multi="${multi ? 1 : 0}" aria-pressed="${on}"><span>${rotulo}</span></button>`;
 }
-function alerta(k, t, d){ return `<div class="alert ${k}"><strong>${t}</strong>${d || ""}</div>`; }
+function ins(k, t, d){ return `<div class="ins ${k}"><strong>${t}</strong>${d ? `<p>${d}</p>` : ""}</div>`; }
 function pendente(o){ return `<div class="pendente"><span class="tag">a enviar</span> ${o}</div>`; }
-function ajudaBotao(chave, rotulo){ return `<button class="btn small ghost ajuda-btn" type="button" data-toggle="${chave}" aria-expanded="${!!S.aberto[chave]}">${rotulo}</button>`; }
+function ajuda(chave, rotulo){ return `<button class="help" type="button" data-toggle="${chave}" aria-expanded="${!!S.aberto[chave]}">${I.maisPeq}${rotulo}</button>`; }
 function qrsFig(tipo){
-  // desenho esquemático, sem escala clínica
   const base = tipo === "qs" || tipo === "rs" ? 40 : 60;
-  const d = {
-    ralto:"M4 60 L24 60 L36 8 L46 66 L52 60 L76 60",
-    qr:"M4 60 L22 60 L26 70 L36 10 L46 60 L76 60",
-    qs:"M4 40 L22 40 L36 92 L50 40 L76 40",
-    rs:"M4 40 L22 40 L27 30 L38 92 L50 40 L76 40"
-  }[tipo];
-  return `<svg viewBox="0 0 80 100" class="fig" aria-hidden="true"><line x1="0" y1="${base}" x2="80" y2="${base}" stroke="var(--line-strong)" stroke-dasharray="3 3"/><path d="${d}" fill="none" stroke="var(--ink)" stroke-width="2.4" stroke-linejoin="round"/></svg>`;
+  const d = { ralto:"M4 60 L24 60 L36 8 L46 66 L52 60 L76 60", qr:"M4 60 L22 60 L26 70 L36 10 L46 60 L76 60",
+    qs:"M4 40 L22 40 L36 92 L50 40 L76 40", rs:"M4 40 L22 40 L27 30 L38 92 L50 40 L76 40" }[tipo];
+  return `<svg viewBox="0 0 80 100" class="fig" aria-hidden="true"><line x1="0" y1="${base}" x2="80" y2="${base}" stroke="var(--line-3)" stroke-dasharray="3 3"/><path d="${d}" fill="none" stroke="var(--ink)" stroke-width="2.4" stroke-linejoin="round"/></svg>`;
 }
-function progresso(i){ return Array.from({length:ULTIMO}, (_, k) => `<i class="${k+1 < i ? "done" : k+1 === i ? "now" : ""}"></i>`).join(""); }
+function progresso(i){ return `<div class="prog" style="grid-template-columns:repeat(${ULTIMO},1fr)">${Array.from({length:ULTIMO}, (_, k) => `<i class="${k+1 < i ? "done" : k+1 === i ? "now" : ""}"></i>`).join("")}</div>`; }
+const dois = n => String(n).padStart(2, "0");
+function topo(passo, titulo, extra){
+  return `<div class="top"><button class="icobtn ghost" type="button" data-voltar="1" aria-label="Voltar">${I.voltar}</button>
+    <span class="step-num">${dois(passo)}</span>
+    <div class="t"><small>Etapa ${passo} de ${ULTIMO}${motivo() ? " · " + motivo().curto : ""}</small><strong>${titulo}</strong></div>${extra || ""}</div>`;
+}
+/* traçado decorativo, derivado da leitura: FC dá o espaçamento, QRS largo alarga o complexo, irregular embaralha */
+function spark(l){
+  const fc = l.fc || 72, largo = l.qrsLargo, irr = l.irregular;
+  const W = 160, H = 36, base = 22, rr = Math.max(14, Math.min(60, 60000 / fc / 25));
+  let d = `M0 ${base}`, x = 4, k = 0;
+  const seed = l.id ? parseInt(l.id.slice(-4), 10) || 7 : 7;
+  while (x < W - 10){
+    const j = irr ? ((seed * (k + 3)) % 7 - 3) * 2 : 0;
+    const w = largo ? 7 : 4;
+    d += ` L${x} ${base} L${x+2} ${base-2} L${x+4} ${base} L${x+w} ${base+3} L${x+w+2} ${base-14} L${x+w+4} ${base+6} L${x+w+6} ${base} L${x+w+11} ${base-3} L${x+w+15} ${base}`;
+    x += rr + j; k++;
+  }
+  d += ` L${W} ${base}`;
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="rgba(255,255,255,.9)" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+}
+function saudacao(){
+  const h = new Date().getHours();
+  const p = h < 5 ? "Boa madrugada" : h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+  const n = (S.prefs.nome || "").trim();
+  return n ? `${p}, ${n}.` : `${p}, doutor.`;
+}
+function mesmoDia(a, b){ const x = new Date(a), y = new Date(b); return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate(); }
+function mapaDias(){
+  const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+  const dias = 12 * 7, inicio = new Date(hoje); inicio.setDate(hoje.getDate() - (dias - 1) - ((hoje.getDay() + 6) % 7));
+  const cont = new Map();
+  S.leituras.forEach(l => { const d = new Date(l.quando); const k = d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); cont.set(k, (cont.get(k) || 0) + 1); });
+  let h = "", d = new Date(inicio);
+  const total = Math.ceil((hoje - inicio) / 864e5) + 1;
+  for (let i = 0; i < total; i++){
+    const k = d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(), n = cont.get(k) || 0;
+    h += `<i class="${n >= 4 ? "l3" : n >= 2 ? "l2" : n ? "l1" : ""}${mesmoDia(d, hoje) ? " hoje" : ""}" title="${n} leitura${n === 1 ? "" : "s"}"></i>`;
+    d.setDate(d.getDate() + 1);
+  }
+  return h;
+}
+function frase(){
+  const n = S.leituras.length;
+  if (!n) return `<b>Pronto para a primeira leitura.</b> Siga a sequência e o Copiloto monta o laudo com você.`;
+  const u = S.leituras[0], h = Math.round((Date.now() - u.quando) / 36e5);
+  const quando = h < 1 ? "agora há pouco" : h < 24 ? `há ${h} h` : `há ${Math.round(h / 24)} d`;
+  const at = S.leituras.filter(l => l.alerta).length;
+  return `Última leitura ${quando}: <b>${u.conc}</b>.${at ? ` ${at} de ${n} com ponto de atenção.` : ` ${n} leitura${n > 1 ? "s" : ""} sem alerta.`}`;
+}
+function contagemMotivos(){
+  const c = {};
+  S.leituras.forEach(l => { c[l.motivo || "outro"] = (c[l.motivo || "outro"] || 0) + 1; });
+  return Object.entries(c).sort((a, b) => b[1] - a[1]);
+}
+const curtoDe = l => (MOTIVOS.find(m => m.k === l.motivo) || {curto:l.queixa || "Leitura"}).curto;
 
-/* ---------- telas fora da leitura ---------- */
-const ICONE = {
-  inicio:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>',
-  biblioteca:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
-  ajuda:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.45V14"/><path d="M12 17h.01"/></svg>'
-};
+/* ---------- navegação ---------- */
 function nav(){
-  const itens = [["inicio","Início"],["biblioteca","Biblioteca"],["ajuda","Ajuda"]];
-  return `<nav class="nav">${itens.map(([k,l]) => `<button type="button" data-aba="${k}" ${S.aba===k?'aria-current="page"':""}>${ICONE[k]}${l}</button>`).join("")}</nav>`;
+  const itens = [["inicio","Início",I.casa],["biblioteca","Biblioteca",I.lista]];
+  return `<nav class="nav">
+    ${itens.map(([k,l,ic]) => `<button type="button" data-aba="${k}" ${S.aba===k?'aria-current="page"':""}>${ic}${l}</button>`).join("")}
+    <button type="button" class="plus" data-ir="motivo">${I.mais}Nova leitura</button>
+    <button type="button" data-aba="guia" ${S.aba==="guia"?'aria-current="page"':""}><span class="orb sm"><i></i></span>Guia</button>
+  </nav>`;
 }
 function dataCurta(ms){
   const d = new Date(ms);
   return d.toLocaleDateString("pt-BR", {day:"2-digit", month:"2-digit"}) + " · " + d.toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
 }
-function itemLeitura(l){
-  return `<button class="item" type="button" data-abrir="${l.id}">
-    ${l.thumb ? `<img class="thumb" src="${l.thumb}" alt="">` : ""}
-    <span class="l" style="flex:1"><strong>${l.conc}</strong><span>${l.queixa} · ${dataCurta(l.quando)}</span></span>
-    <span class="tag ${l.alerta ? "bad" : "ok"}">${l.alerta ? "atenção" : "sem alerta"}</span>
+
+/* ---------- painel ---------- */
+function inicio(){
+  const ult = S.leituras.slice(0, 2), n = S.leituras.length, at = S.leituras.filter(l => l.alerta).length;
+  const top = contagemMotivos()[0];
+  const nomeTop = top ? (MOTIVOS.find(m => m.k === top[0]) || {curto:"—"}).curto : "—";
+  return `<div class="screen">
+  <div class="top"><div class="brand">${marca()}<strong>Copiloto</strong></div><div class="t"></div>
+    <button class="icobtn" type="button" data-aba="config" aria-label="Configurações">${I.config}</button></div>
+  <div class="scroll stagger">
+    <div><h1>${saudacao()}</h1><p class="mute" style="margin-top:4px">Vamos interpretar um ECG?</p></div>
+    <div class="hero-orb">
+      <div class="orb"><i></i></div>
+      <p class="say">${frase()}</p>
+      <div class="chips" style="justify-content:center">
+        <span class="pill"><b>${n}</b> leitura${n === 1 ? "" : "s"}</span>
+        <span class="pill"><b>${at}</b> com atenção</span>
+        ${top ? `<span class="pill">mais comum <b>${nomeTop}</b></span>` : ""}
+      </div>
+    </div>
+    <button class="btn glow wide" type="button" data-ir="motivo" style="padding:15px">${I.ecg}Ler um eletro agora</button>
+    <div class="sec"><h3>Suas leituras</h3>${n ? `<button class="textbtn" type="button" data-aba="biblioteca">Ver todas ${I.seta}</button>` : ""}</div>
+    ${n ? `<div class="rgrid">${ult.map(cardLeitura).join("")}</div>`
+      : `<div class="card"><div class="empty" style="padding:14px 6px"><p class="ink2">Nenhuma leitura guardada.</p><p class="tiny">A primeira fica aqui, com o laudo e a foto. Nada sai deste aparelho.</p></div></div>`}
+    <div class="card"><div class="sec" style="margin:0"><h3>Mapa de leituras</h3><span class="tiny mute">12 semanas</span></div>
+      <div class="dots">${mapaDias()}</div>
+      <p class="tiny mute">Cada ponto é um dia. Quanto mais claro, mais eletros lidos.</p></div>
+    <p class="tiny mute" style="text-align:center;padding:4px 10px">O Copiloto não lê o eletro por você. Quem interpreta é você; ele garante que nenhuma etapa fique para trás.</p>
+  </div>${nav()}</div>`;
+}
+function cardLeitura(l){
+  return `<button class="card grad ${l.alerta ? "pulso" : "vital"} rcard" type="button" data-abrir="${l.id}">
+    <div class="top-l"><div><strong>${l.conc}</strong><div class="meta">${curtoDe(l)} · ${dataCurta(l.quando)}</div></div><span class="tag">${l.alerta ? "atenção" : "ok"}</span></div>
+    ${spark(l)}
   </button>`;
 }
-function inicio(){
-  const ult = S.leituras.slice(0, 3);
-  return `<div class="scroll">
-    <div><div class="eyebrow">Sequência de Leitura Ativa</div><h2 style="margin-top:4px">Copiloto de ECG</h2></div>
-    <button class="hero" type="button" data-ir="motivo">
-      <span class="eyebrow">Com o eletro na mão</span>
-      <strong>Vamos interpretar um ECG?</strong>
-      <span class="small" style="opacity:.8">Siga a sequência etapa por etapa. O Copiloto organiza o raciocínio, faz as contas e monta o laudo.</span>
-      <span class="go">Começar</span>
-    </button>
-    ${ult.length ? `<div class="card"><h3>Últimas leituras</h3><div class="list">${ult.map(itemLeitura).join("")}</div></div>`
-      : `<div class="card"><h3>Nenhuma leitura ainda</h3><p class="muted small">A primeira leitura fica guardada aqui. Nada sai deste aparelho.</p></div>`}
-    <p class="muted small">O Copiloto não lê o eletro por você. Quem interpreta é você; ele garante que nenhuma etapa fique para trás.</p>
-  </div>${nav()}`;
+
+/* ---------- biblioteca ---------- */
+function filtradas(){
+  const f = S.filtro, b = f.busca.trim().toLowerCase();
+  return S.leituras.filter(l => (f.motivo === "todas" || l.motivo === f.motivo) && (!f.atencao || l.alerta)
+    && (!b || (l.conc + " " + l.laudo + " " + (l.queixa || "")).toLowerCase().includes(b)));
 }
 function biblioteca(){
-  return `<div class="scroll">
-    <div><div class="eyebrow">Só você vê</div><h2 style="margin-top:4px">Biblioteca</h2></div>
-    ${S.leituras.length ? `<div class="card"><div class="list">${S.leituras.map(itemLeitura).join("")}</div></div>` : `<div class="card"><p class="muted">Ainda não há leituras salvas.</p></div>`}
-    <p class="muted small">As leituras ficam guardadas neste celular, no navegador. Se você limpar os dados do site, elas somem.</p>
-  </div>${nav()}`;
+  const lista = filtradas(), motivos = contagemMotivos();
+  return `<div class="screen">
+  <div class="top"><div class="t"><small>Só você vê</small><strong>Biblioteca</strong></div><span class="pill"><b>${S.leituras.length}</b> leitura${S.leituras.length === 1 ? "" : "s"}</span></div>
+  <div class="scroll stagger">
+    <label class="search">${I.busca}<input type="search" id="busca" placeholder="Buscar no laudo" value="${S.filtro.busca.replace(/"/g, "&quot;")}" autocomplete="off"></label>
+    <div class="hscroll">
+      <button class="chip" type="button" data-fmotivo="todas" aria-pressed="${S.filtro.motivo === "todas"}">Todas</button>
+      <button class="chip" type="button" data-fatencao="1" aria-pressed="${S.filtro.atencao}">Com atenção</button>
+      ${motivos.map(([k, n]) => `<button class="chip" type="button" data-fmotivo="${k}" aria-pressed="${S.filtro.motivo === k}">${(MOTIVOS.find(m => m.k === k) || {curto:k}).curto} · ${n}</button>`).join("")}
+    </div>
+    ${lista.length ? `<div class="rlist">${lista.map(itemLeitura).join("")}</div>`
+      : `<div class="empty"><div class="orb"><i></i></div><p class="ink2">${S.leituras.length ? "Nada com esse filtro." : "Ainda não há leituras salvas."}</p><p class="tiny">${S.leituras.length ? "Tente outra busca ou limpe os filtros." : "Cada leitura guarda o laudo, as respostas e a foto, só neste celular."}</p></div>`}
+  </div>${nav()}</div>`;
 }
-function ajuda(){
-  return `<div class="scroll">
-    <div><div class="eyebrow">Como usar</div><h2 style="margin-top:4px">Ajuda</h2></div>
-    <div class="card"><h3>A sequência</h3><p class="small">Motivo do exame → técnica → ritmo → regularidade e frequência → eixo → descarte de arritmias → descarte de isquemia → QRS, QT e alto risco. O Copiloto guarda cada resposta e usa nas etapas seguintes, sem perguntar de novo.</p></div>
-    <div class="card"><h3>A foto é opcional</h3><p class="small">Você pode ler direto no papel. Com a foto, o eletro fica à mão durante a leitura (botão <b>Eletro</b> no topo) e dá para medir com a régua na tela. Use <b>Câmera</b> para fotografar na hora ou <b>Galeria</b> para uma foto já tirada.</p></div>
-    <div class="card"><h3>A régua na foto</h3><p class="small">Antes de medir, arraste as duas bolinhas sobre cinco quadradões (1 segundo de papel). O app aprende a escala daquela foto e passa a medir em milissegundos.</p></div>
-    <div class="card"><h3>O laudo</h3><p class="small">O texto final é montado com as suas respostas. Confira antes de copiar.</p></div>
-    <div class="card"><h3>Privacidade</h3><p class="small">A foto e as respostas ficam neste aparelho. O app não envia nada para servidor nenhum.</p></div>
-  </div>${nav()}`;
+function itemLeitura(l){
+  return `<button class="ritem" type="button" data-abrir="${l.id}">
+    <span class="sw grad ${l.alerta ? "pulso" : "vital"}">${l.thumb ? `<img src="${l.thumb}" alt="">` : spark(l)}</span>
+    <span><strong>${l.conc}</strong><span class="m">${curtoDe(l)} · ${dataCurta(l.quando)}</span></span>
+    <span class="tag ${l.alerta ? "bad" : "ok"}">${l.alerta ? "atenção" : "ok"}</span>
+  </button>`;
 }
 function detalhe(){
   const l = S.detalhe;
-  return `<div class="bar"><button class="back" type="button" data-ir="inicio" aria-label="Voltar">←</button><div class="t"><small>${l.queixa} · ${dataCurta(l.quando)}</small><strong>Leitura salva</strong></div></div>
-  <div class="scroll">
-    ${l.thumb ? `<img src="${l.thumb}" alt="Miniatura do eletro" style="width:100%;border-radius:12px;border:1px solid var(--line)">` : ""}
-    <div class="laudo">${l.laudo}</div>
-    <div class="row2"><button class="btn" type="button" data-copiar="1">Copiar laudo</button><button class="btn" type="button" data-apagar="${l.id}">Apagar</button></div>
-  </div>`;
+  return `<div class="screen">
+  <div class="top"><button class="icobtn ghost" type="button" data-aba="biblioteca" aria-label="Voltar">${I.voltar}</button><div class="t"><small>${curtoDe(l)} · ${dataCurta(l.quando)}</small><strong>Leitura salva</strong></div><span class="tag ${l.alerta ? "bad" : "ok"}">${l.alerta ? "atenção" : "ok"}</span></div>
+  <div class="scroll stagger">
+    ${l.thumb ? `<img src="${l.thumb}" alt="Miniatura do eletro" style="width:100%;border-radius:18px;border:1px solid var(--line-2)">` : `<div class="card grad ${l.alerta ? "pulso" : "vital"}" style="min-height:90px;justify-content:flex-end">${spark(l)}</div>`}
+    <div class="laudo">${l.laudo}${assinatura() ? `<div class="sig">${assinatura().trim()}</div>` : ""}</div>
+    <div class="row2"><button class="btn" type="button" data-copiar="1">${I.copiar}Copiar</button><button class="btn danger" type="button" data-apagar="${l.id}">${I.lixo}Apagar</button></div>
+  </div></div>`;
+}
+
+/* ---------- guia (a esfera) ---------- */
+function guia(){
+  const aba = S.guiaAba, t = (k, l) => `<button class="chip" type="button" data-guia="${k}" aria-pressed="${aba === k}">${l}</button>`;
+  let corpo = "";
+  if (aba === "calc"){
+    const c = S.calc;
+    corpo = `<div class="card"><h3>Frequência cardíaca</h3>
+      <div class="calc"><label for="g-cq">Quadradinhos entre dois QRS · 1500 ÷ n</label><div class="linha"><input type="number" id="g-cq" inputmode="decimal" step="0.5" min="0" value="${c.cq || ""}" data-gcalc="div" data-fator="1500"><span class="res" id="g-cq-res">—</span></div></div>
+      <div class="calc"><label for="g-cg">Quadrados grandes entre dois QRS · 300 ÷ n</label><div class="linha"><input type="number" id="g-cg" inputmode="decimal" step="0.5" min="0" value="${c.cg || ""}" data-gcalc="div" data-fator="300"><span class="res" id="g-cg-res">—</span></div></div>
+      <div class="calc"><label for="g-c10">QRS em 10 segundos · n × 6</label><div class="linha"><input type="number" id="g-c10" inputmode="numeric" min="0" value="${c.c10 || ""}" data-gcalc="mul" data-fator="6"><span class="res" id="g-c10-res">—</span></div></div>
+    </div>
+    <div class="card"><h3>QT corrigido (Bazett)</h3><p class="tiny mute">QTc = QT ÷ √RR, com RR em segundos.</p>
+      <div class="row2"><div class="field"><label for="g-qt">QT (ms)</label><input type="number" id="g-qt" inputmode="numeric" value="${c.qt || ""}"></div><div class="field"><label for="g-fc">FC (bpm)</label><input type="number" id="g-fc" inputmode="numeric" value="${c.fc || ""}"></div></div>
+      <div class="readout"><span class="num" id="g-qtc">—<span class="u">ms</span></span></div>
+      <p class="tiny mute">Os cortes de referência ficam por conta do Dr. Vitor, na etapa de QT.</p></div>`;
+  } else if (aba === "uso"){
+    corpo = `<div class="card"><h3>A sequência</h3><p class="small ink2">Motivo do exame → técnica → ritmo → regularidade e frequência → eixo → descarte de arritmias → descarte de isquemia → QRS, QT e alto risco. O Copiloto guarda cada resposta e usa nas etapas seguintes, sem perguntar de novo.</p></div>
+      <div class="card"><h3>A foto é opcional</h3><p class="small ink2">Você pode ler direto no papel. Com a foto, o eletro fica à mão durante a leitura (o olho no topo da etapa) e dá para medir com a régua na tela. <b>Câmera</b> fotografa na hora; <b>Galeria</b> usa uma foto já tirada.</p></div>
+      <div class="card"><h3>A régua na foto</h3><p class="small ink2">Antes de medir, arraste as duas bolinhas sobre cinco quadradões (1 segundo de papel). O app aprende a escala daquela foto e passa a medir em milissegundos.</p></div>
+      <div class="card"><h3>O laudo</h3><p class="small ink2">O texto final é montado com as suas respostas e pode sair assinado com o seu nome (Configurações). Confira antes de copiar.</p></div>
+      <div class="card"><h3>Privacidade</h3><p class="small ink2">A foto e as respostas ficam neste aparelho. O app não envia nada para servidor nenhum.</p></div>`;
+  } else {
+    const g = [["Ritmo sinusal","P positiva em DI, DII e aVF, negativa em aVR, precedendo cada QRS com a mesma morfologia."],["Regular / irregular","Compare os intervalos R-R ao longo do traçado."],["QRS largo","120 ms ou mais: três quadradinhos ou mais."],["Derivações contíguas","Inferior: DII, DIII, aVF · Lateral: DI, aVL, V5, V6 · Anterior/septal: V1 a V4."],["Calibração padrão","25 mm/s e 10 mm/mV, impressos no próprio ECG."],["Eixo por DI e aVF","Os dois positivos: normal. DI positivo e aVF negativo: DII desempata. DI negativo e aVF positivo: direita. Os dois negativos: extremo."]];
+    corpo = `<div class="card"><h3>Termos usados no app</h3><div class="gloss">${g.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div><p class="tiny mute">Definições como aparecem no roteiro do Dr. Vitor.</p></div>`;
+  }
+  return `<div class="screen">
+  <div class="top"><div class="t"><small>Copiloto</small><strong>Guia</strong></div><span class="orb sm"><i></i></span></div>
+  <div class="scroll stagger">
+    <div class="hscroll">${t("calc","Calculadoras")}${t("uso","Como usar")}${t("gloss","Termos")}</div>
+    ${corpo}
+  </div>${nav()}</div>`;
+}
+
+/* ---------- configurações ---------- */
+function config(){
+  const p = S.prefs, n = S.leituras.length;
+  return `<div class="screen">
+  <div class="top"><button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Este aparelho</small><strong>Configurações</strong></div></div>
+  <div class="scroll stagger">
+    <div class="card"><div class="field"><label for="p-nome">Como o Copiloto deve chamar você</label><input type="text" id="p-nome" value="${(p.nome || "").replace(/"/g, "&quot;")}" placeholder="Dr. Vitor" autocomplete="off"></div>
+      <p class="tiny mute">Aparece na saudação e, se quiser, no fim do laudo.</p></div>
+    <div class="card">
+      <div class="toggle"><div class="l"><strong>Assinar o laudo</strong><span>Acrescenta seu nome e a data ao copiar</span></div><button class="sw" type="button" role="switch" aria-checked="${!!p.assinatura}" data-pref="assinatura"></button></div>
+      <div class="toggle"><div class="l"><strong>Tema claro</strong><span>Para ambientes muito iluminados</span></div><button class="sw" type="button" role="switch" aria-checked="${p.tema === "claro"}" data-pref="tema"></button></div>
+    </div>
+    <div class="card"><h3>Dados</h3><p class="small mute">${n} leitura${n === 1 ? "" : "s"} guardada${n === 1 ? "" : "s"} neste aparelho. Nada é enviado a servidor.</p>
+      <button class="btn danger" type="button" data-apagar-tudo="1" ${n ? "" : "disabled"}>${I.lixo}Apagar todas as leituras</button>
+      ${S.confirmaApagar ? `${ins("bad", "Tem certeza?", `Isso apaga as ${n} leituras e as fotos. Não dá para desfazer.`)}<div class="row2"><button class="btn" type="button" data-cancela-apagar="1">Cancelar</button><button class="btn danger" type="button" data-confirma-apagar="1">Apagar tudo</button></div>` : ""}</div>
+    <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 3 · roteiro clínico do Dr. Vitor Coutinho</p>
+  </div></div>`;
+}
+function assinatura(){
+  const n = (S.prefs.nome || "").trim();
+  if (!S.prefs.assinatura || !n) return "";
+  return `\n\n— ${n} · ${new Date().toLocaleDateString("pt-BR")}`;
 }
 
 /* ---------- etapa 1: o paciente ---------- */
 function telaMotivo(){
   const m = motivo();
-  return `<div class="bar"><button class="back" type="button" data-ir="inicio" aria-label="Voltar">←</button><div class="t"><small>Etapa 1 de ${ULTIMO}</small><strong>Antes do traçado, olhe para o paciente</strong></div></div>
-  <div class="prog" style="grid-template-columns:repeat(${ULTIMO},1fr)">${progresso(1)}</div>
-  <div class="scroll" id="seq-scroll">
+  return `<div class="screen">
+  <div class="top"><button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Voltar">${I.voltar}</button><span class="step-num">01</span><div class="t"><small>Etapa 1 de ${ULTIMO}</small><strong>Olhe para o paciente</strong></div></div>
+  ${progresso(1)}
+  <div class="scroll stagger" id="seq-scroll">
     <p class="q">O que motivou este ECG?</p>
-    <div class="opts">${MOTIVOS.map(x => `<button type="button" class="opt" data-motivo="${x.k}" aria-pressed="${S.cur.motivo === x.k}">${x.nome}</button>`).join("")}</div>
-    ${m ? `<div class="card orientacao"><span class="eyebrow">${m.nome}</span>${m.texto.map(t => `<p>${t}</p>`).join("")}</div>` : ""}
+    <div class="tiles">${MOTIVOS.map((x, i) => `<button type="button" class="tile" data-motivo="${x.k}" aria-pressed="${S.cur.motivo === x.k}"><span class="ix">${dois(i + 1)}</span><strong>${x.nome}</strong></button>`).join("")}</div>
+    ${m ? `<div class="orient" id="orient"><span class="eyebrow">Antes de olhar o traçado</span>${m.texto.map(t => `<p>${t}</p>`).join("")}</div>` : `<p class="tiny mute">A depender do motivo, o Copiloto mostra o que não pode passar naquele contexto.</p>`}
   </div>
-  <div class="foot"><button class="btn primary" type="button" data-ir="foto" ${m ? "" : "disabled"}>Iniciar leitura →</button></div>`;
+  <div class="foot"><button class="btn primary" type="button" data-ir="foto" ${m ? "" : "disabled"}>Iniciar leitura ${I.seta}</button></div></div>`;
 }
 
 /* ---------- foto (opcional) ---------- */
 function telaFoto(){
   const c = S.cur;
   if (!c.tela){
-    return `<div class="bar"><button class="back" type="button" data-ir="motivo" aria-label="Voltar">←</button><div class="t"><small>Opcional</small><strong>Quer usar a foto do eletro?</strong></div></div>
-    <div class="scroll">
-      <p class="small muted">Com a foto, o traçado fica à mão durante toda a leitura e dá para medir com a régua na tela. Sem ela, você lê direto no papel.</p>
-      <button class="dropzone" type="button" data-fonte="camera">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1.4-2h5.2L16 6"/></svg>
-        <strong>Fotografar o eletro</strong><span class="muted small">Abre a câmera</span>
-      </button>
-      <button class="btn wide" type="button" data-fonte="galeria">Escolher uma foto já tirada</button>
-      <div class="card"><h3>Para a foto sair boa</h3><p class="small">Papel esticado numa superfície plana · luz de lado, sem flash · celular paralelo ao papel · enquadre só o eletro, o mais perto que der.</p></div>
-      <p class="muted small">A foto fica neste aparelho. O app não envia imagem para lugar nenhum.</p>
+    return `<div class="screen">
+    <div class="top"><button class="icobtn ghost" type="button" data-ir="motivo" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>Quer usar a foto do eletro?</strong></div></div>
+    <div class="scroll stagger">
+      <p class="small mute">Com a foto, o traçado fica à mão durante toda a leitura e dá para medir com a régua na tela. Sem ela, você lê direto no papel.</p>
+      <button class="dropzone" type="button" data-fonte="camera">${I.camera}<strong>Fotografar o eletro</strong><span class="mute tiny">Abre a câmera</span></button>
+      <button class="btn wide" type="button" data-fonte="galeria">${I.galeria}Escolher uma foto já tirada</button>
+      <div class="card tight"><h3>Para a foto sair boa</h3><p class="small mute">Papel esticado numa superfície plana · luz de lado, sem flash · celular paralelo ao papel · enquadre só o eletro, o mais perto que der.</p></div>
+      <p class="tiny mute">A foto fica neste aparelho. O app não envia imagem para lugar nenhum.</p>
     </div>
-    <div class="foot"><button class="btn primary" type="button" data-ir="seq">Seguir sem foto</button></div>`;
+    <div class="foot"><button class="btn primary" type="button" data-ir="seq">Seguir sem foto ${I.seta}</button></div></div>`;
   }
   const q = c.foto, avisos = avisosFoto(q), ruim = avisos.some(a => a.n === "bad");
-  return `<div class="bar"><button class="back" type="button" data-ir="motivo" aria-label="Voltar">←</button><div class="t"><small>Opcional</small><strong>A foto ficou boa?</strong></div></div>
+  return `<div class="screen">
+  <div class="top"><button class="icobtn ghost" type="button" data-ir="motivo" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>A foto ficou boa?</strong></div></div>
   ${visorHTML("full", "Arraste para mover, pince para aproximar.")}
-  <div class="scroll">
-    ${avisos.length ? avisos.map(a => alerta(a.n, a.t, a.d)).join("") : alerta("ok", "Foto boa", "Nitidez, luz e tamanho estão dentro do esperado.")}
-    <p class="muted small">O conferidor é automático, não um veredito. Se essa é a única foto possível agora, dá para seguir.</p>
+  <div class="scroll stagger" style="padding-top:12px">
+    ${avisos.length ? avisos.map(a => ins(a.n, a.t, a.d)).join("") : ins("ok", "Foto boa", "Nitidez, luz e tamanho estão dentro do esperado.")}
+    <p class="tiny mute">O conferidor é automático, não um veredito. Se essa é a única foto possível agora, dá para seguir.</p>
   </div>
   <div class="foot">
-    <button class="btn small" type="button" data-fonte="camera">Câmera</button>
-    <button class="btn small" type="button" data-fonte="galeria">Galeria</button>
+    <button class="btn" type="button" data-fonte="camera" aria-label="Câmera">${I.camera}</button>
+    <button class="btn" type="button" data-fonte="galeria" aria-label="Galeria">${I.galeria}</button>
     <button class="btn primary" type="button" data-ir="seq">${ruim ? "Usar assim mesmo" : "Usar esta foto"}</button>
-  </div>`;
+  </div></div>`;
 }
 
-/* ---------- régua na foto: calibrar e medir ---------- */
+/* ---------- régua na foto ---------- */
 function telaMedir(){
   const m = S.medir, c = S.cur;
   if (!c.escala){
     const quad = c.calQuadrados || 5;
-    return `<div class="bar"><button class="back" type="button" data-sair-medir="1" aria-label="Voltar">←</button><div class="t"><small>Régua na foto</small><strong>Primeiro, calibre</strong></div></div>
+    return `<div class="screen">
+    <div class="top"><button class="icobtn ghost" type="button" data-sair-medir="1" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Régua na foto</small><strong>Primeiro, calibre</strong></div></div>
     ${visorHTML("full", "Ponha cada bolinha em uma linha grossa, contando " + quad + " quadradão" + (quad > 1 ? "es" : "") + ".")}
-    <div class="scroll">
-      <p class="q">Diga ao app quanto vale um quadradinho nesta foto.</p>
-      <div class="chips">
+    <div class="scroll" style="padding-top:12px">
+      <p class="q sm">Diga ao app quanto vale um quadradinho nesta foto.</p>
+      <div class="hscroll">
         <button class="chip" type="button" data-quad="5" aria-pressed="${quad===5}">5 quadradões · 1 s</button>
         <button class="chip" type="button" data-quad="3" aria-pressed="${quad===3}">3 quadradões</button>
         <button class="chip" type="button" data-quad="1" aria-pressed="${quad===1}">1 quadradão · 0,2 s</button>
@@ -650,44 +812,46 @@ function telaMedir(){
       <div class="card" id="cal-out"></div>
       <div id="cal-aviso"></div>
     </div>
-    <div class="foot"><button class="btn primary" type="button" id="usar-cal">Calibrar</button></div>`;
+    <div class="foot"><button class="btn primary" type="button" id="usar-cal">Calibrar</button></div></div>`;
   }
   const titulo = m.alvo === "fc" ? "Medir o RR" : "Medir o QRS";
   const dica = m.alvo === "fc" ? "Uma bolinha em cada pico de QRS, em dois batimentos seguidos." : "Do começo ao fim do QRS.";
-  return `<div class="bar"><button class="back" type="button" data-sair-medir="1" aria-label="Voltar">←</button><div class="t"><small>Régua na foto</small><strong>${titulo}</strong></div><button class="btn small ghost" type="button" data-recalibrar="1">Recalibrar</button></div>
+  return `<div class="screen">
+  <div class="top"><button class="icobtn ghost" type="button" data-sair-medir="1" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Régua na foto</small><strong>${titulo}</strong></div><button class="textbtn" type="button" data-recalibrar="1">Recalibrar</button></div>
   ${visorHTML("full", dica)}
-  <div class="scroll"><div class="card" id="medir-out"></div></div>
-  <div class="foot"><button class="btn primary" type="button" id="usar-medida">Usar esta medida</button></div>`;
+  <div class="scroll" style="padding-top:12px"><div class="card" id="medir-out"></div></div>
+  <div class="foot"><button class="btn primary" type="button" id="usar-medida">Usar esta medida</button></div></div>`;
 }
 function telaVer(){
-  return `<div class="bar"><button class="back" type="button" data-fechar-ver="1" aria-label="Voltar">←</button><div class="t"><small>Etapa ${S.cur.passo} de ${ULTIMO}</small><strong>O eletro</strong></div><button class="btn small ghost" type="button" data-fechar-ver="1">Fechar</button></div>
-  ${visorHTML("tudo", "Arraste para mover, pince para aproximar.")}`;
+  return `<div class="screen">
+  <div class="top"><button class="icobtn ghost" type="button" data-fechar-ver="1" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Etapa ${S.cur.passo} de ${ULTIMO}</small><strong>O eletro</strong></div><button class="icobtn" type="button" data-fechar-ver="1" aria-label="Fechar">${I.fechar}</button></div>
+  ${visorHTML("tudo", "Arraste para mover, pince para aproximar.")}</div>`;
 }
 
 /* ---------- etapas 2 a 8 ---------- */
 const ETAPAS = {
   2: () => {
     const r = R(), cal = r.vel && r.amp, calOk = calibPadrao();
-    let h = `<p class="small muted">Vamos confirmar rapidamente se o traçado é adequado para interpretação.</p>
-    <h3>2.1 — Calibração</h3><p class="small">Confira a calibração impressa no ECG.</p>
-    <p class="small muted">Velocidade</p><div class="opts">${opt("vel","25","25 mm/s")}${opt("vel","outra","Outra / não sei")}</div>
-    <p class="small muted">Amplitude</p><div class="opts">${opt("amp","10","10 mm/mV")}${opt("amp","outra","Outra / não sei")}</div>
-    ${ajudaBotao("ondecal", "Onde encontro isso?")}
-    ${S.aberto.ondecal ? `<div class="card small">${pendente("Foto padrão de um ECG mostrando onde ficam a velocidade e a amplitude impressas")}</div>` : ""}`;
+    let h = `<p class="small mute">Vamos confirmar rapidamente se o traçado é adequado para interpretação.</p>
+    <div class="sec"><h3>2.1 — Calibração</h3></div><p class="small ink2">Confira a calibração impressa no ECG.</p>
+    <span class="eyebrow">Velocidade</span><div class="opts">${opt("vel","25","25 mm/s")}${opt("vel","outra","Outra / não sei")}</div>
+    <span class="eyebrow">Amplitude</span><div class="opts">${opt("amp","10","10 mm/mV")}${opt("amp","outra","Outra / não sei")}</div>
+    ${ajuda("ondecal", "Onde encontro isso?")}
+    ${S.aberto.ondecal ? `<div class="helpbox">${pendente("Foto padrão de um ECG mostrando onde ficam a velocidade e a amplitude impressas")}</div>` : ""}`;
     if (cal){
-      h += calOk ? alerta("ok", "✓ Calibração padrão", "")
-        : alerta("warn", "⚠️ Atenção à calibração", "Este ECG não foi confirmado em 25 mm/s e 10 mm/mV. Isso modifica a relação entre os quadrados do papel e o tempo. Sugiro repetir o ECG.") + `<div class="opts">${opt("calSeguir","sim","Continuar mesmo assim")}</div>`;
+      h += calOk ? ins("ok", "Calibração padrão", "")
+        : ins("warn", "Atenção à calibração", "Este ECG não foi confirmado em 25 mm/s e 10 mm/mV. Isso modifica a relação entre os quadrados do papel e o tempo. Sugiro repetir o ECG.") + `<div class="opts">${opt("calSeguir","sim","Continuar mesmo assim")}</div>`;
     }
     if (cal && (calOk || r.calSeguir)){
-      h += `<h3 style="margin-top:8px">2.2 — Colocação dos eletrodos dos membros</h3>
-      <div class="card small"><p>☑ DI com onda P positiva e/ou QRS predominantemente positivo</p><p>☑ aVR com onda P negativa e/ou QRS predominantemente negativo</p></div>
-      <p class="q" style="font-size:1rem">O traçado está assim?</p>
+      h += `<div class="sec"><h3>2.2 — Eletrodos dos membros</h3></div>
+      <div class="crit"><p>DI com onda P positiva e/ou QRS predominantemente positivo</p><p>aVR com onda P negativa e/ou QRS predominantemente negativo</p></div>
+      <p class="q sm">O traçado está assim?</p>
       <div class="opts">${opt("elet","sim","Sim")}${opt("elet","nao","Não")}</div>`;
-      if (r.elet === "sim") h += alerta("ok", "✓ Padrão habitual das derivações dos membros", "");
+      if (r.elet === "sim") h += ins("ok", "Padrão habitual das derivações dos membros", "");
       if (r.elet === "nao"){
-        h += alerta("warn", "⚠️ Antes de interpretar, considere possível troca de eletrodos", "Quando onda P e QRS estão negativos em DI e positivos em aVR, suspeite especialmente de inversão dos eletrodos dos braços. Entretanto, alterações isoladas da polaridade do QRS podem representar o próprio padrão do paciente.");
-        h += ajudaBotao("eletajuda", "Me ajude a conferir os eletrodos");
-        if (S.aberto.eletajuda) h += `<div class="card small"><p>Confira a posição dos eletrodos dos membros e, se houver suspeita de inversão, corrija a posição e repita o ECG antes de interpretar, sempre que possível.</p>${pendente("Imagem com a colocação correta dos eletrodos dos membros")}</div>`;
+        h += ins("warn", "Antes de interpretar, considere possível troca de eletrodos", "Quando onda P e QRS estão negativos em DI e positivos em aVR, suspeite especialmente de inversão dos eletrodos dos braços. Entretanto, alterações isoladas da polaridade do QRS podem representar o próprio padrão do paciente.");
+        h += ajuda("eletajuda", "Me ajude a conferir os eletrodos");
+        if (S.aberto.eletajuda) h += `<div class="helpbox"><p>Confira a posição dos eletrodos dos membros e, se houver suspeita de inversão, corrija a posição e repita o ECG antes de interpretar, sempre que possível.</p>${pendente("Imagem com a colocação correta dos eletrodos dos membros")}</div>`;
         h += `<div class="opts">${opt("eletSeguir","sim","Seguir mesmo assim")}</div>`;
       }
     }
@@ -696,24 +860,24 @@ const ETAPAS = {
   3: () => {
     const r = R();
     let h = `<p class="q">O ritmo é sinusal?</p>
-    <div class="card small"><p>☑ P positiva em DI, DII e aVF</p><p>☑ P negativa em aVR</p><p>☑ Ondas P precedem os QRS do ritmo de base</p><p>☑ Ondas P com a mesma morfologia em uma mesma derivação</p></div>
+    <div class="crit"><p>P positiva em DI, DII e aVF</p><p>P negativa em aVR</p><p>Ondas P precedem os QRS do ritmo de base</p><p>Ondas P com a mesma morfologia em uma mesma derivação</p></div>
     <div class="opts">${opt("ritmo","sim","Sim")}${opt("ritmo","nao","Não")}${opt("ritmo","duvida","Não tenho certeza")}</div>`;
-    if (r.ritmo === "sim") h += alerta("ok", "✓ Ritmo sinusal", "");
-    if (r.ritmo === "nao") h += alerta("warn", "⚠️ O ritmo não apresenta todos os critérios de ritmo sinusal", "Continue a sequência. Na etapa Descarte de arritmias, vamos caracterizá-lo melhor.");
+    if (r.ritmo === "sim") h += ins("ok", "Ritmo sinusal", "");
+    if (r.ritmo === "nao") h += ins("warn", "O ritmo não apresenta todos os critérios de ritmo sinusal", "Continue a sequência. Na etapa Descarte de arritmias, vamos caracterizá-lo melhor.");
     if (r.ritmo === "duvida"){
       h += `<div class="card"><span class="eyebrow">Como identificar o ritmo sinusal</span>
-        <h3>1. Primeiro, encontre a onda P</h3><p class="small">DII costuma ser uma boa derivação para começar.</p>${pendente("Imagem de um ECG sinusal destacando apenas a P em DII")}
+        <h3>1. Primeiro, encontre a onda P</h3><p class="small ink2">DII costuma ser uma boa derivação para começar.</p>${pendente("Imagem de um ECG sinusal destacando apenas a P em DII")}
         <div class="opts">${opt("wiz1","sim","Encontrei a onda P")}${opt("wiz1","nao","Não encontrei")}</div>`;
-      if (r.wiz1 === "nao") h += alerta("warn", "Sem uma onda P claramente identificável, o ritmo não é sinusal", "Continue a sequência. Vamos caracterizar melhor o ritmo em Descarte de arritmias.");
+      if (r.wiz1 === "nao") h += ins("warn", "Sem uma onda P claramente identificável, o ritmo não é sinusal", "Continue a sequência. Vamos caracterizar melhor o ritmo em Descarte de arritmias.");
       if (r.wiz1 === "sim"){
-        h += `<h3>2. Agora confira a polaridade da P</h3><p class="small">Para uma onda P de origem sinusal, procure: positiva em DI, positiva em DII, positiva em aVF, negativa em aVR. Observe apenas se a onda P está predominantemente acima ou abaixo da linha de base.</p>${pendente("Imagem pequena com DI, DII, aVF e aVR mostrando a polaridade esperada da P")}
+        h += `<h3>2. Agora confira a polaridade da P</h3><p class="small ink2">Para uma onda P de origem sinusal, procure: positiva em DI, positiva em DII, positiva em aVF, negativa em aVR. Observe apenas se a onda P está predominantemente acima ou abaixo da linha de base.</p>${pendente("Imagem pequena com DI, DII, aVF e aVR mostrando a polaridade esperada da P")}
           <div class="opts">${opt("wiz2","sim","Tem característica sinusal")}${opt("wiz2","nao","Não tem característica sinusal")}</div>`;
-        if (r.wiz2 === "nao") h += alerta("warn", "Os critérios de ritmo sinusal não estão todos presentes", "Não precisamos definir a arritmia agora. Continue a sequência: vamos caracterizar melhor o ritmo em Descarte de arritmias.");
+        if (r.wiz2 === "nao") h += ins("warn", "Os critérios de ritmo sinusal não estão todos presentes", "Não precisamos definir a arritmia agora. Continue a sequência: vamos caracterizar melhor o ritmo em Descarte de arritmias.");
         if (r.wiz2 === "sim"){
-          h += `<h3>3. Olhe o ritmo de base</h3><p class="small">As ondas P apresentam morfologia semelhante em uma mesma derivação e precedem os QRS do ritmo de base?</p><p class="small muted">Importante: um batimento diferente isolado, como uma extrassístole, não exclui necessariamente um ritmo de base sinusal.</p>
+          h += `<h3>3. Olhe o ritmo de base</h3><p class="small ink2">As ondas P apresentam morfologia semelhante em uma mesma derivação e precedem os QRS do ritmo de base?</p><p class="tiny mute">Importante: um batimento diferente isolado, como uma extrassístole, não exclui necessariamente um ritmo de base sinusal.</p>
             <div class="opts">${opt("wiz3","sim","Sim")}${opt("wiz3","nao","Não")}</div>`;
-          if (r.wiz3 === "sim") h += alerta("ok", "✓ Os achados são compatíveis com ritmo sinusal", "");
-          if (r.wiz3 === "nao") h += alerta("warn", "Os critérios de ritmo sinusal não estão todos presentes", "Não precisamos definir a arritmia agora. Continue a sequência: vamos caracterizar melhor o ritmo em Descarte de arritmias.");
+          if (r.wiz3 === "sim") h += ins("ok", "Os achados são compatíveis com ritmo sinusal", "");
+          if (r.wiz3 === "nao") h += ins("warn", "Os critérios de ritmo sinusal não estão todos presentes", "Não precisamos definir a arritmia agora. Continue a sequência: vamos caracterizar melhor o ritmo em Descarte de arritmias.");
         }
       }
       h += `</div>`;
@@ -722,92 +886,92 @@ const ETAPAS = {
   },
   4: () => {
     const r = R();
-    let h = `<h3>4.1 — Regularidade</h3><p class="q" style="font-size:1rem">O ritmo é regular?</p><p class="small muted">Compare os intervalos R-R ao longo do traçado.</p>
+    let h = `<div class="sec"><h3>4.1 — Regularidade</h3></div><p class="q sm">O ritmo é regular?</p><p class="tiny mute">Compare os intervalos R-R ao longo do traçado.</p>
     <div class="opts">${opt("reg","regular","Regular")}${opt("reg","irregular","Irregular")}</div>`;
     if (r.reg){
-      h += `<h3 style="margin-top:8px">4.2 — Frequência cardíaca</h3>
+      h += `<div class="sec"><h3>4.2 — Frequência cardíaca</h3></div>
       <div class="field"><label for="fc">Qual a frequência cardíaca?</label><div class="linha"><input type="number" id="fc" inputmode="numeric" min="10" max="350" value="${r.fc || ""}" placeholder="—"><span class="u">bpm</span></div></div>
-      ${ajudaBotao("calcfc", "Me ajude a calcular a FC")}`;
+      ${ajuda("calcfc", "Me ajude a calcular a FC")}`;
       if (S.aberto.calcfc){
-        const calc = (id, rot, fator, tipo) => `<div class="calc"><label for="${id}">${rot}</label><div class="linha"><input type="number" id="${id}" inputmode="decimal" min="0" step="0.5" value="${r[id] || ""}" data-calc="${tipo}" data-fator="${fator}"><span class="u" id="${id}-res">—</span><button class="btn small" type="button" data-usar-calc="${id}">Usar</button></div></div>`;
-        h += `<div class="card small">`;
+        const calc = (id, rot, fator, tipo) => `<div class="calc"><label for="${id}">${rot}</label><div class="linha"><input type="number" id="${id}" inputmode="decimal" min="0" step="0.5" value="${r[id] || ""}" data-calc="${tipo}" data-fator="${fator}"><span class="res" id="${id}-res">—</span><button class="btn small" type="button" data-usar-calc="${id}">Usar</button></div></div>`;
+        h += `<div class="helpbox">`;
         if (r.reg === "regular"){
-          h += `<p><b>1. Quadradinhos pequenos</b> — conte quantos quadradinhos pequenos existem entre dois QRS consecutivos. FC = 1500 ÷ quadradinhos.</p>${calc("cq","Quadradinhos entre dois QRS",1500,"div")}
-            <p><b>2. Quadrados grandes</b> — conte quantos quadrados grandes existem entre dois QRS consecutivos. FC = 300 ÷ quadrados grandes.</p>${calc("cg","Quadrados grandes entre dois QRS",300,"div")}`;
+          h += `<p><b>1. Quadradinhos pequenos.</b> Conte quantos quadradinhos pequenos existem entre dois QRS consecutivos. FC = 1500 ÷ quadradinhos.</p>${calc("cq","Quadradinhos entre dois QRS",1500,"div")}
+            <p><b>2. Quadrados grandes.</b> Conte quantos quadrados grandes existem entre dois QRS consecutivos. FC = 300 ÷ quadrados grandes.</p>${calc("cg","Quadrados grandes entre dois QRS",300,"div")}`;
         }
-        h += `<p><b>${r.reg === "regular" ? "3. " : ""}Contagem em 10 segundos</b> — em um trecho contínuo de 10 segundos, como o DII longo, conte o número de QRS. FC ${r.reg === "irregular" ? "média " : ""}= QRS × 6.</p>${calc("c10","QRS em 10 segundos",6,"mul")}`;
-        if (r.reg === "regular" && S.cur.tela) h += `<p><b>4. Régua na foto</b> — meça a distância entre dois QRS na própria foto.</p><button class="btn" type="button" data-medir="fc">Medir na foto</button>`;
+        h += `<p><b>${r.reg === "regular" ? "3. " : ""}Contagem em 10 segundos.</b> Em um trecho contínuo de 10 segundos, como o DII longo, conte o número de QRS. FC ${r.reg === "irregular" ? "média " : ""}= QRS × 6.</p>${calc("c10","QRS em 10 segundos",6,"mul")}`;
+        if (r.reg === "regular" && S.cur.tela) h += `<p><b>4. Régua na foto.</b> Meça a distância entre dois QRS na própria foto.</p><button class="btn small" type="button" data-medir="fc">${I.regua}Medir na foto</button>`;
         h += `</div>`;
       }
-      if (r.fc) h += alerta("ok", "FC registrada: " + r.fc + " bpm", r.reg === "irregular" ? "Frequência média estimada." : "");
+      if (r.fc) h += ins("ok", "FC registrada: " + r.fc + " bpm", r.reg === "irregular" ? "Frequência média estimada." : "");
     }
     return {html:h, ok:() => !!(R().reg && R().fc)};
   },
   5: () => {
     const r = R(), e = eixo();
-    let h = `<h3>5.1 — Como é o QRS em DI?</h3><div class="opts">${opt("di","pos","Predominantemente positivo")}${opt("di","neg","Predominantemente negativo")}</div>
-    <h3>5.2 — Como é o QRS em aVF?</h3><div class="opts">${opt("avf","pos","Predominantemente positivo")}${opt("avf","neg","Predominantemente negativo")}</div>
-    ${ajudaBotao("polqrs", "Me ajude a saber se o QRS é positivo ou negativo")}`;
+    let h = `<div class="sec"><h3>5.1 — Como é o QRS em DI?</h3></div><div class="opts">${opt("di","pos","Predominantemente positivo")}${opt("di","neg","Predominantemente negativo")}</div>
+    <div class="sec"><h3>5.2 — Como é o QRS em aVF?</h3></div><div class="opts">${opt("avf","pos","Predominantemente positivo")}${opt("avf","neg","Predominantemente negativo")}</div>
+    ${ajuda("polqrs", "Me ajude a saber se o QRS é positivo ou negativo")}`;
     if (S.aberto.polqrs){
-      h += `<div class="card small"><p>Observe o QRS em relação à linha de base.</p><p><b>Predominantemente positivo</b> → a maior parte do QRS está acima da linha de base.</p><p><b>Predominantemente negativo</b> → a maior parte do QRS está abaixo da linha de base.</p>
+      h += `<div class="helpbox"><p>Observe o QRS em relação à linha de base.</p><p><b>Predominantemente positivo</b> → a maior parte do QRS está acima da linha de base.</p><p><b>Predominantemente negativo</b> → a maior parte do QRS está abaixo da linha de base.</p>
         <div class="figs"><figure>${qrsFig("ralto")}<figcaption>R alto</figcaption></figure><figure>${qrsFig("qr")}<figcaption>qR</figcaption></figure><figure>${qrsFig("qs")}<figcaption>QS</figcaption></figure><figure>${qrsFig("rs")}<figcaption>rS</figcaption></figure></div>
-        <p class="muted" style="font-size:.76rem">Os dois primeiros são positivos; os dois últimos, negativos. Desenho esquemático, a validar pelo Dr. Vitor.</p></div>`;
+        <p class="tiny mute">Os dois primeiros são positivos; os dois últimos, negativos. Desenho esquemático, a validar pelo Dr. Vitor.</p></div>`;
     }
     if (r.di === "pos" && r.avf === "neg"){
-      h += `<h3>Agora observe DII</h3><p class="q" style="font-size:1rem">Como é o QRS em DII?</p><div class="opts">${opt("dii","pos","Predominantemente positivo")}${opt("dii","neg","Predominantemente negativo")}</div>`;
+      h += `<div class="sec"><h3>Agora observe DII</h3></div><p class="q sm">Como é o QRS em DII?</p><div class="opts">${opt("dii","pos","Predominantemente positivo")}${opt("dii","neg","Predominantemente negativo")}</div>`;
     }
-    if (e) h += alerta(e.k, (e.k === "ok" ? "✓ " : "") + e.t, "");
+    if (e) h += ins(e.k, e.t, "");
     return {html:h, ok:() => !!eixo()};
   },
   6: () => {
     const a = arritmia();
-    return {html:`<p class="small muted">O Copiloto já sabe o ritmo, a regularidade e a frequência. Ele parte daí e só pergunta o que falta.</p>` + a.html, ok:() => arritmia().pronto};
+    return {html:`<p class="small mute">O Copiloto já sabe o ritmo, a regularidade e a frequência. Ele parte daí e só pergunta o que falta.</p>` + a.html, ok:() => arritmia().pronto};
   },
   7: () => {
     const r = R(), m = r.isq || [];
-    let h = `<h3>Antes de procurar alterações, pense em territórios</h3>
-    <p class="small">Não analise uma derivação isoladamente. Procure alterações em derivações anatomicamente contíguas.</p>
-    <div class="card small terr"><p><b>Inferior:</b> DII · DIII · aVF</p><p><b>Lateral:</b> DI · aVL · V5 · V6</p><p><b>Anterior/Septal:</b> V1 · V2 · V3 · V4</p></div>
-    <p class="q" style="font-size:1rem">Você identifica alguma destas alterações em pelo menos duas derivações contíguas?</p>
+    let h = `<div class="sec"><h3>Antes de procurar alterações, pense em territórios</h3></div>
+    <p class="small ink2">Não analise uma derivação isoladamente. Procure alterações em derivações anatomicamente contíguas.</p>
+    <div class="terr">${TERR.map(([, b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div>
+    <p class="q sm">Você identifica alguma destas alterações em pelo menos duas derivações contíguas?</p>
     <div class="opts">${opt("isq","supra","Supradesnivelamento do segmento ST",true)}${opt("isq","infra","Infradesnivelamento do segmento ST",true)}${opt("isq","tinv","Inversão simétrica da onda T",true)}${opt("isq","nenhuma","Nenhuma dessas alterações",true)}</div>
-    ${ajudaBotao("critsupra", "Me ajude a revisar os critérios de supra")}
-    ${S.aberto.critsupra ? `<div class="card small">${pendente("Critérios de supra de ST por derivação, sexo e idade")}</div>` : ""}`;
-    if (m.includes("supra")) h += alerta("bad", "⚠️ Supradesnivelamento de ST", "Em quais derivações?") + `<div class="opts">${TERR.map(([k,l]) => opt("terr", k, l, true)).join("")}</div>`;
+    ${ajuda("critsupra", "Me ajude a revisar os critérios de supra")}
+    ${S.aberto.critsupra ? `<div class="helpbox">${pendente("Critérios de supra de ST por derivação, sexo e idade")}</div>` : ""}`;
+    if (m.includes("supra")) h += ins("bad", "Supradesnivelamento de ST", "Em quais derivações?") + `<div class="opts">${TERR.map(([k, b, s]) => opt("terr", k, b + " · " + s, true)).join("")}</div>`;
     if (m.includes("infra")){
-      h += alerta("warn", "⚠️ Infradesnivelamento de ST em derivações contíguas", "") + `<p class="q" style="font-size:1rem">Infra predominante em V1–V3?</p><div class="opts">${opt("infraV1","sim","Sim")}${opt("infraV1","nao","Não")}</div>`;
-      if (r.infraV1 === "sim") h += alerta("bad", "Lembre-se de considerar infarto com supra posterior", "Avalie as derivações posteriores (V7–V9).");
-      if (r.infraV1 === "nao") h += alerta("warn", "Pode representar isquemia subendocárdica", "Dependendo da morfologia e do contexto clínico.");
+      h += ins("warn", "Infradesnivelamento de ST em derivações contíguas", "") + `<p class="q sm">Infra predominante em V1–V3?</p><div class="opts">${opt("infraV1","sim","Sim")}${opt("infraV1","nao","Não")}</div>`;
+      if (r.infraV1 === "sim") h += ins("bad", "Lembre-se de considerar infarto com supra posterior", "Avalie as derivações posteriores (V7–V9).");
+      if (r.infraV1 === "nao") h += ins("warn", "Pode representar isquemia subendocárdica", "Dependendo da morfologia e do contexto clínico.");
     }
-    if (m.includes("tinv")) h += alerta("warn", "⚠️ Ondas T invertidas e simétricas em derivações contíguas", "Avalie distribuição, profundidade, comparação com ECG prévio e contexto clínico.");
+    if (m.includes("tinv")) h += ins("warn", "Ondas T invertidas e simétricas em derivações contíguas", "Avalie distribuição, profundidade, comparação com ECG prévio e contexto clínico.");
     if (m.includes("nenhuma")){
-      h += `<h3 style="margin-top:6px">Antes de seguir, procure padrões de alto risco</h3><p class="small">Faça uma última checagem:</p>
+      h += `<div class="sec"><h3>Antes de seguir, procure padrões de alto risco</h3></div><p class="small ink2">Faça uma última checagem:</p>
         <div class="opts">${PADROES.map(([k,l]) => opt("padroes", k, l, true)).join("")}${opt("padroes","nenhum","Nenhum desses padrões",true)}</div>
-        ${ajudaBotao("padraoajuda", "Não sei identificar")}
-        ${S.aberto.padraoajuda ? `<div class="card small">${PADROES.map(([,l]) => pendente(l + ": imagem validada e 2 ou 3 características")).join("")}</div>` : ""}`;
+        ${ajuda("padraoajuda", "Não sei identificar")}
+        ${S.aberto.padraoajuda ? `<div class="helpbox">${PADROES.map(([,l]) => pendente(l + ": imagem validada e 2 ou 3 características")).join("")}</div>` : ""}`;
       const p = r.padroes || [];
-      if (p.includes("nenhum")) h += alerta("ok", "✓ Nenhum padrão isquêmico evidente identificado nesta etapa", "");
-      else if (p.length) h += alerta("bad", "⚠️ Padrão de alto risco marcado", p.map(x => PADROES.find(y => y[0] === x)[1]).join(" · "));
+      if (p.includes("nenhum")) h += ins("ok", "Nenhum padrão isquêmico evidente identificado nesta etapa", "");
+      else if (p.length) h += ins("bad", "Padrão de alto risco marcado", p.map(x => PADROES.find(y => y[0] === x)[1]).join(" · "));
     }
     return {html:h, ok:() => isquemia().pronto};
   },
-  8: () => ({html:`${alerta("warn", "Etapa em construção", "O Dr. Vitor está escrevendo esta parte: QRS, intervalo QT e padrões de alto risco. Assim que ela chegar, entra aqui.")}
-    <p class="small muted">Por enquanto, siga para o resumo. O laudo avisa que esta etapa ainda não foi feita.</p>`, ok:() => true})
+  8: () => ({html:`${ins("info", "Etapa em construção", "O Dr. Vitor está escrevendo esta parte: QRS, intervalo QT e padrões de alto risco. Assim que ela chegar, entra aqui.")}
+    <p class="small mute">Por enquanto, siga para o resumo. O laudo avisa que esta etapa ainda não foi feita.</p>`, ok:() => true})
 };
 
 function telaSeq(){
   const i = S.cur.passo, v = ETAPAS[i]();
-  return `<div class="bar"><button class="back" type="button" data-voltar="1" aria-label="Voltar">←</button><div class="t"><small>Etapa ${i} de ${ULTIMO} · ${motivo() ? motivo().nome : ""}</small><strong>${PASSOS[i]}</strong></div>
-    ${S.cur.tela ? `<button class="btn small" type="button" data-ver="1">Eletro</button>` : ""}<button class="btn small ghost" type="button" data-ir="inicio">Sair</button></div>
-  <div class="prog" style="grid-template-columns:repeat(${ULTIMO},1fr)">${progresso(i)}</div>
-  <div class="scroll" id="seq-scroll">${v.html}</div>
-  <div class="foot"><button class="btn primary" type="button" id="proxima" ${v.ok() ? "" : "disabled"}>${i === ULTIMO ? "Ver resumo e laudo" : "Próxima etapa"}</button></div>`;
+  return `<div class="screen">
+  ${topo(i, PASSOS[i], `${S.cur.tela ? `<button class="icobtn" type="button" data-ver="1" aria-label="Ver o eletro">${I.olho}</button>` : ""}<button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Sair">${I.fechar}</button>`)}
+  ${progresso(i)}
+  <div class="scroll stagger" id="seq-scroll">${v.html}</div>
+  <div class="foot"><button class="btn primary" type="button" id="proxima" ${v.ok() ? "" : "disabled"}>${i === ULTIMO ? "Ver resumo e laudo" : "Próxima etapa"} ${I.seta}</button></div></div>`;
 }
 
 /* ---------- laudo ---------- */
 const minuscula = s => s.charAt(0).toLowerCase() + s.slice(1);
 function resumo(){
   const r = R(), m = motivo(), e = eixo(), a = arritmia(), isq = isquemia();
-  const linhas = [], conc = [], atencao = [];
+  const linhas = [], conc = [], atencao = [], blocos = [];
   linhas.push("Motivo do exame: " + (m ? minuscula(m.nome) : "não informado") + ".");
   if (r.vel && r.amp){
     if (calibPadrao()) linhas.push("Calibração padrão (25 mm/s, 10 mm/mV).");
@@ -818,37 +982,42 @@ function resumo(){
   if (a.pronto){
     const complemento = a.res.d && !/FC (de )?\d+ bpm\.$/.test(a.res.d) ? " " + a.res.d : "";
     linhas.push(a.res.t + (/regular/.test(a.res.t) ? "" : ", " + r.reg) + ", FC " + r.fc + " bpm." + complemento);
-    conc.push(a.res.t);
+    conc.push(a.res.t); blocos.push({t:"Ritmo", v:a.res.t, k:a.res.k, d:`${r.reg}, FC ${r.fc} bpm`});
     if (a.res.k !== "ok") atencao.push(a.res.t);
-    if (a.extra){ linhas.push(a.extra + "."); conc.push(minuscula(a.extra)); atencao.push(a.extra); }
+    if (a.extra){ linhas.push(a.extra + "."); conc.push(minuscula(a.extra)); atencao.push(a.extra); blocos.push({t:"Batimentos diferentes", v:a.extra, k:"warn"}); }
   }
   if (e){
     linhas.push(e.t + ".");
+    blocos.push({t:"Eixo", v:e.t, k:e.k, d:`DI ${r.di === "pos" ? "+" : "−"} · aVF ${r.avf === "pos" ? "+" : "−"}${r.dii ? " · DII " + (r.dii === "pos" ? "+" : "−") : ""}`});
     if (e.k !== "ok"){ conc.push(minuscula(e.t)); atencao.push(e.t); }
   }
   if (isq.pronto){
-    if (isq.achados.length) isq.achados.forEach(x => { linhas.push(x + "."); conc.push(minuscula(x)); atencao.push(x); });
-    else linhas.push("Nenhum padrão isquêmico evidente identificado.");
+    if (isq.achados.length){ isq.achados.forEach(x => { linhas.push(x + "."); conc.push(minuscula(x)); atencao.push(x); blocos.push({t:"Isquemia", v:x, k:"bad"}); }); }
+    else { linhas.push("Nenhum padrão isquêmico evidente identificado."); blocos.push({t:"Isquemia", v:"Nenhum padrão isquêmico evidente", k:"ok"}); }
   }
   linhas.push("Etapa de QRS, QT e padrões de alto risco ainda não disponível nesta versão.");
   linhas.push("");
-  if (!atencao.length && conc.length) conc[conc.length - 1] += ", sem alterações nas demais etapas avaliadas";
-  linhas.push("Conclusão: " + (conc.length ? conc.join("; ") : "sem alterações nas etapas avaliadas") + ".");
-  const titulo = conc.length ? conc[0].charAt(0).toUpperCase() + conc[0].slice(1) + (conc.length > 1 ? " + " + (conc.length - 1) + (conc.length > 2 ? " achados" : " achado") : "") : "Sem alterações nas etapas avaliadas";
-  return {texto:linhas.join("\n"), titulo, atencao};
+  const semAtencao = !atencao.length && conc.length;
+  linhas.push("Conclusão: " + (conc.length ? conc.join("; ") + (semAtencao ? ", sem alterações nas demais etapas avaliadas" : "") : "sem alterações nas etapas avaliadas") + ".");
+  const titulo = conc.length ? conc[0].charAt(0).toUpperCase() + conc[0].slice(1) + (conc.length > 1 ? " + " + (conc.length - 1) : "") : "Sem alterações nas etapas avaliadas";
+  return {texto:linhas.join("\n"), titulo, atencao, blocos};
 }
 function telaLaudo(){
   const s = resumo(), m = motivo();
-  return `<div class="bar"><button class="back" type="button" data-voltar="1" aria-label="Voltar">←</button><div class="t"><small>Leitura concluída · ${m ? m.nome : ""}</small><strong>Resumo e laudo</strong></div></div>
-  <div class="scroll">
-    ${s.atencao.length ? alerta("bad", s.atencao.length === 1 ? "1 ponto de atenção" : s.atencao.length + " pontos de atenção", s.atencao.join(" · ")) : alerta("ok", "Nenhum ponto de atenção nas etapas avaliadas", "")}
-    ${m ? `<div class="card small"><span class="eyebrow">Volte ao paciente · ${m.nome}</span><p>${m.texto[0]}</p></div>` : ""}
-    <div><div class="eyebrow" style="margin-bottom:6px">Laudo montado com as suas respostas</div><div class="laudo" id="laudo">${s.texto}</div></div>
-    <div class="row2"><button class="btn" type="button" data-copiar="1">Copiar laudo</button><button class="btn" type="button" id="salvar">${S.cur.salva ? "Salvo ✓" : "Salvar"}</button></div>
-    <div class="card"><h3>Ficou com dúvida?</h3><p class="muted small">Copie o laudo e leve para o PreceptorIA, ou para discutir o caso no Clube do Plantonista.</p></div>
-    <p class="muted small">Quem leu foi você. O Copiloto garantiu que nenhuma etapa ficou para trás e fez as contas.</p>
+  return `<div class="screen">
+  <div class="top"><button class="icobtn ghost" type="button" data-voltar="1" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Leitura concluída${m ? " · " + m.curto : ""}</small><strong>Resumo e laudo</strong></div><button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Fechar">${I.fechar}</button></div>
+  <div class="scroll stagger">
+    ${s.atencao.length ? ins("bad", s.atencao.length === 1 ? "1 ponto de atenção" : s.atencao.length + " pontos de atenção", s.atencao.join(" · ")) : ins("ok", "Nenhum ponto de atenção nas etapas avaliadas", "")}
+    <div class="sec"><h3>O que o Copiloto mapeou</h3></div>
+    ${s.blocos.map((b, i) => `<div class="ins ${b.k}"><span class="ix">${dois(i + 1)} · ${b.t.toUpperCase()}</span><strong>${b.v}</strong>${b.d ? `<p>${b.d}</p>` : ""}</div>`).join("")}
+    ${m ? `<div class="orient"><span class="eyebrow">Volte ao paciente · ${m.curto}</span><p>${m.texto[0]}</p></div>` : ""}
+    <div class="sec"><h3>Laudo</h3><span class="tiny mute">montado com as suas respostas</span></div>
+    <div class="laudo" id="laudo">${s.texto}${assinatura() ? `<div class="sig">${assinatura().trim()}</div>` : ""}</div>
+    <div class="row2"><button class="btn" type="button" data-copiar="1">${I.copiar}Copiar</button><button class="btn" type="button" id="salvar">${S.cur.salva ? I.check + "Salvo" : I.salvar + "Salvar"}</button></div>
+    <div class="card tight"><h3>Ficou com dúvida?</h3><p class="small mute">Copie o laudo e leve para o PreceptorIA, ou para discutir o caso no Clube do Plantonista.</p></div>
+    <p class="tiny mute" style="text-align:center">Quem leu foi você. O Copiloto garantiu que nenhuma etapa ficou para trás e fez as contas.</p>
   </div>
-  <div class="foot"><button class="btn primary" type="button" data-ir="inicio">Nova leitura</button></div>`;
+  <div class="foot"><button class="btn primary" type="button" data-ir="motivo">Nova leitura ${I.seta}</button></div></div>`;
 }
 
 /* ---------- desenhar e ligar ---------- */
@@ -859,17 +1028,16 @@ function aviso(msg){
   setTimeout(() => t.remove(), 1700);
 }
 function manterRolagem(fn){
-  const sc = document.getElementById("seq-scroll"), topo = sc ? sc.scrollTop : 0;
+  const sc = document.getElementById("seq-scroll"), topoR = sc ? sc.scrollTop : 0;
   fn();
   const sc2 = document.getElementById("seq-scroll");
-  if (sc2) sc2.scrollTop = topo;
+  if (sc2){ sc2.classList.remove("stagger"); sc2.scrollTop = topoR; }
 }
-/* respostas que dependem de outras: mudar a de cima apaga as de baixo */
 const RAMO6 = ["extra","extraQrs","qrs","tq","pind","temP","rel","bav","pns"];
 const DEPENDE = {
   vel:["calSeguir"], amp:["calSeguir"], elet:["eletSeguir"],
   ritmo:["wiz1"].concat(RAMO6), wiz1:["wiz2"].concat(RAMO6), wiz2:["wiz3"].concat(RAMO6), wiz3:RAMO6,
-  reg:RAMO6.concat(["cq","cg","c10"]), fc:RAMO6, extra:["extraQrs"], qrs:["tq","pind"], temP:["rel","bav","qrs"], rel:["bav"], pns:["qrs"],
+  reg:RAMO6.concat(["cq","cg","c10","fc"]), fc:RAMO6, extra:["extraQrs"], qrs:["tq","pind"], temP:["rel","bav","qrs"], rel:["bav"], pns:["qrs"],
   di:["dii"], avf:["dii"]
 };
 function limpar(k){ (DEPENDE[k] || []).forEach(x => { if (x in R()){ delete R()[x]; limpar(x); } }); }
@@ -908,35 +1076,44 @@ function miniatura(){
   } catch(_){ return null; }
 }
 function salvarLeitura(){
-  const s = resumo();
-  const reg = { id:S.cur.id, quando:S.cur.quando, queixa:motivo() ? motivo().nome : "Leitura",
-    conc:s.titulo, alerta:s.atencao.length > 0, laudo:s.texto, thumb:miniatura() };
+  const s = resumo(), r = R();
+  const reg = { id:S.cur.id, quando:S.cur.quando, motivo:S.cur.motivo, queixa:motivo() ? motivo().nome : "Leitura",
+    conc:s.titulo, alerta:s.atencao.length > 0, laudo:s.texto, thumb:miniatura(),
+    fc:r.fc || null, qrsLargo:r.qrs === "largo", irregular:r.reg === "irregular" };
   S.leituras = [reg].concat(S.leituras.filter(l => l.id !== reg.id));
-  gravarLeituras(S.leituras);
+  gravarJSON(CHAVE, S.leituras);
   if (S.cur.blob) guardarFoto(S.cur.id, S.cur.blob);
   S.cur.salva = true;
   aviso("Salvo neste aparelho");
-  desenhar();
+  manterRolagem(desenhar);
 }
 function soltarVisor(){ if (S.visor){ S.visor.destruir(); S.visor = null; } }
 function irPara(t){
-  if (t === "motivo" && (S.tela === "inicio" || S.tela === "detalhe" || S.tela === "laudo")){ S.cur = nova(); S.vista = null; S.aberto = {}; }
-  if (t === "inicio") S.aba = "inicio";
+  if (t === "motivo" && S.tela !== "foto" && S.tela !== "seq"){ S.cur = nova(); S.vista = null; S.aberto = {}; }
   soltarVisor();
   S.tela = t;
   desenhar();
   const sc = document.getElementById("seq-scroll"); if (sc) sc.scrollTop = 0;
 }
+function irAba(a){
+  soltarVisor();
+  S.tela = "inicio"; S.aba = a; S.confirmaApagar = false;
+  desenhar();
+}
+function escalonar(){
+  app.querySelectorAll(".stagger").forEach(st => [...st.children].forEach((el, i) => el.style.setProperty("--i", Math.min(i, 12))));
+}
 function desenhar(){
-  const telas = { inicio:() => S.aba === "biblioteca" ? biblioteca() : S.aba === "ajuda" ? ajuda() : inicio(),
+  const telas = { inicio:() => ({inicio, biblioteca, guia, config}[S.aba] || inicio)(),
     motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo };
   app.innerHTML = (telas[S.tela] || telas.inicio)();
+  escalonar();
 
-  app.querySelectorAll("[data-aba]").forEach(b => b.onclick = () => { S.tela = "inicio"; S.aba = b.dataset.aba; desenhar(); });
+  app.querySelectorAll("[data-aba]").forEach(b => b.onclick = () => irAba(b.dataset.aba));
   app.querySelectorAll("[data-ir]").forEach(b => b.onclick = () => irPara(b.dataset.ir));
   app.querySelectorAll("[data-motivo]").forEach(b => b.onclick = () => {
     S.cur.motivo = b.dataset.motivo; manterRolagem(desenhar);
-    const o = app.querySelector(".orientacao"); if (o) o.scrollIntoView({block:"nearest", behavior:"smooth"});
+    const o = document.getElementById("orient"); if (o) o.scrollIntoView({block:"nearest", behavior:"smooth"});
   });
   app.querySelectorAll("[data-fonte]").forEach(b => b.onclick = () => pedirFoto(b.dataset.fonte));
   app.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const k = b.dataset.toggle; S.aberto[k] = !S.aberto[k]; manterRolagem(desenhar); });
@@ -957,19 +1134,40 @@ function desenhar(){
     if (S.detalhe){ S.tela = "detalhe"; desenhar(); }
   });
   app.querySelectorAll("[data-copiar]").forEach(b => b.onclick = () => {
-    const txt = S.tela === "detalhe" ? S.detalhe.laudo : resumo().texto;
+    const txt = (S.tela === "detalhe" ? S.detalhe.laudo : resumo().texto) + assinatura();
     try { navigator.clipboard.writeText(txt).then(() => aviso("Laudo copiado"), () => aviso("Não deu para copiar aqui")); }
     catch(_){ aviso("Não deu para copiar aqui"); }
   });
   app.querySelectorAll("[data-apagar]").forEach(b => b.onclick = () => {
     const id = b.dataset.apagar;
     S.leituras = S.leituras.filter(l => l.id !== id);
-    gravarLeituras(S.leituras);
+    gravarJSON(CHAVE, S.leituras);
     apagarFoto(id);
-    S.tela = "inicio"; S.aba = "biblioteca";
     aviso("Leitura apagada");
-    desenhar();
+    irAba("biblioteca");
   });
+  app.querySelectorAll("[data-fmotivo]").forEach(b => b.onclick = () => { S.filtro.motivo = b.dataset.fmotivo; desenhar(); });
+  app.querySelectorAll("[data-fatencao]").forEach(b => b.onclick = () => { S.filtro.atencao = !S.filtro.atencao; desenhar(); });
+  app.querySelectorAll("[data-guia]").forEach(b => b.onclick = () => { S.guiaAba = b.dataset.guia; desenhar(); });
+  app.querySelectorAll("[data-pref]").forEach(b => b.onclick = () => {
+    const k = b.dataset.pref;
+    if (k === "tema") S.prefs.tema = S.prefs.tema === "claro" ? "escuro" : "claro"; else S.prefs[k] = !S.prefs[k];
+    gravarJSON(CHAVE_PREFS, S.prefs); aplicarTema(); desenhar();
+  });
+  const nome = document.getElementById("p-nome");
+  if (nome) nome.oninput = () => { S.prefs.nome = nome.value; gravarJSON(CHAVE_PREFS, S.prefs); };
+  app.querySelectorAll("[data-apagar-tudo]").forEach(b => b.onclick = () => { S.confirmaApagar = true; desenhar(); });
+  app.querySelectorAll("[data-cancela-apagar]").forEach(b => b.onclick = () => { S.confirmaApagar = false; desenhar(); });
+  app.querySelectorAll("[data-confirma-apagar]").forEach(b => b.onclick = () => {
+    S.leituras.forEach(l => apagarFoto(l.id)); S.leituras = []; gravarJSON(CHAVE, []); S.confirmaApagar = false;
+    aviso("Tudo apagado"); desenhar();
+  });
+  const busca = document.getElementById("busca");
+  if (busca) busca.oninput = () => {
+    S.filtro.busca = busca.value; const pos = busca.selectionStart;
+    desenhar();
+    const b2 = document.getElementById("busca"); if (b2){ b2.focus(); try { b2.setSelectionRange(pos, pos); } catch(_){} }
+  };
   ligarOpts(app);
 
   // etapa 4: FC digitada e calculadoras
@@ -982,7 +1180,7 @@ function desenhar(){
     };
     fcIn.onchange = () => manterRolagem(desenhar);
   }
-  const contaCalc = inp => { const n = +inp.value, f = +inp.dataset.fator; return !n ? null : inp.dataset.calc === "div" ? Math.round(f / n) : Math.round(n * f); };
+  const contaCalc = inp => { const n = +inp.value, f = +inp.dataset.fator; return !n ? null : (inp.dataset.calc || inp.dataset.gcalc) === "div" ? Math.round(f / n) : Math.round(n * f); };
   app.querySelectorAll("[data-calc]").forEach(inp => {
     const res = document.getElementById(inp.id + "-res");
     const mostrar = () => { R()[inp.id] = inp.value; const fc = contaCalc(inp); res.textContent = fc ? fc + " bpm" : "—"; };
@@ -993,6 +1191,21 @@ function desenhar(){
     if (fc && fc >= 10 && fc <= 350){ definirFC(fc); manterRolagem(desenhar); aviso("FC " + fc + " bpm"); }
     else aviso("Confira o número digitado");
   });
+  // guia: calculadoras soltas
+  app.querySelectorAll("[data-gcalc]").forEach(inp => {
+    const res = document.getElementById(inp.id + "-res");
+    const mostrar = () => { S.calc[inp.id.slice(2)] = inp.value; const fc = contaCalc(inp); res.textContent = fc ? fc + " bpm" : "—"; };
+    inp.oninput = mostrar; mostrar();
+  });
+  const gqt = document.getElementById("g-qt"), gfc = document.getElementById("g-fc");
+  if (gqt && gfc){
+    const qtc = () => {
+      S.calc.qt = gqt.value; S.calc.fc = gfc.value;
+      const qt = +gqt.value, fc = +gfc.value;
+      document.getElementById("g-qtc").innerHTML = (qt > 0 && fc > 0 ? Math.round(qt / Math.sqrt(60 / fc)) : "—") + `<span class="u">ms</span>`;
+    };
+    gqt.oninput = qtc; gfc.oninput = qtc; qtc();
+  }
 
   if (S.tela === "foto" && S.cur.tela) montarVisor("#visor", {modo:"livre"});
   if (S.tela === "ver") montarVisor("#visor", {modo:"livre"});
@@ -1016,13 +1229,13 @@ function ligarMedir(){
     const recalcular = () => {
       const {px, pxmm, ang} = lerCalibracao(), prec = pxmm ? MS_POR_MM / pxmm : 0;
       const bom = pxmm >= 4, aceitavel = pxmm >= 2.6, inclinado = Math.abs(ang * 180 / Math.PI) > 4;
-      document.getElementById("cal-out").innerHTML = `<div class="readout"><span class="n">${pxmm.toFixed(1)}</span><span class="u">pixels por mm</span><span class="tag ${bom ? "ok" : aceitavel ? "warn" : "bad"}">${bom ? "boa" : aceitavel ? "no limite" : "insuficiente"}</span></div>
+      document.getElementById("cal-out").innerHTML = `<div class="readout"><span class="num">${pxmm.toFixed(1)}<span class="u">px/mm</span></span><span class="tag ${bom ? "ok" : aceitavel ? "warn" : "bad"}">${bom ? "boa" : aceitavel ? "no limite" : "insuficiente"}</span></div>
         <div class="kv"><span>Precisão da medida</span><span>± ${Math.max(1, Math.round(prec))} ms por pixel</span></div>
         <div class="kv"><span>Inclinação do papel</span><span>${(ang*180/Math.PI).toFixed(1)}°</span></div>`;
       document.getElementById("cal-aviso").innerHTML =
-        (!aceitavel ? alerta("bad", "A foto não dá resolução para medir", "Cada pixel vale " + Math.round(prec) + " ms: o erro de um dedo na tela já muda a medida. Tire outra foto mais perto do papel.") : "")
-        + (aceitavel && !bom ? alerta("warn", "Resolução no limite", "Dá para medir, mas chegando mais perto na próxima foto a medida fica bem mais firme.") : "")
-        + (inclinado ? alerta("warn", "Papel torto na foto", "O app corrige a conta, mas endireitar a foto facilita a sua leitura.") : "");
+        (!aceitavel ? ins("bad", "A foto não dá resolução para medir", "Cada pixel vale " + Math.round(prec) + " ms: o erro de um dedo na tela já muda a medida. Tire outra foto mais perto do papel.") : "")
+        + (aceitavel && !bom ? ins("warn", "Resolução no limite", "Dá para medir, mas chegando mais perto na próxima foto a medida fica bem mais firme.") : "")
+        + (inclinado ? ins("info", "Papel torto na foto", "O app corrige a conta, mas endireitar a foto facilita a sua leitura.") : "");
       document.getElementById("usar-cal").disabled = !px;
     };
     montarVisor("#visor", {modo:"calibrar", pontos:c.pontos.cal, aoMudar:recalcular});
@@ -1042,9 +1255,9 @@ function ligarMedir(){
     const p = c.pontos[alvo], ms = msEntre(p[0], p[1]), el = document.getElementById("medir-out");
     if (alvo === "fc"){
       const f = ms ? Math.round(60000 / ms) : 0;
-      el.innerHTML = `<div class="readout"><span class="n">${f || "—"}</span><span class="u">bpm</span></div><div class="kv"><span>RR medido</span><span>${ms} ms · ${quadr(ms)} quadradinhos</span></div>`;
+      el.innerHTML = `<div class="readout"><span class="num">${f || "—"}<span class="u">bpm</span></span></div><div class="kv"><span>RR medido</span><span>${ms} ms · ${quadr(ms)} quadradinhos</span></div>`;
     } else {
-      el.innerHTML = `<div class="readout"><span class="n">${ms}</span><span class="u">ms</span><span class="tag ${ms >= 120 ? "bad" : "ok"}">${ms >= 120 ? "largo" : "estreito"}</span></div><div class="kv"><span>Quadradinhos</span><span>${quadr(ms)}</span></div>`;
+      el.innerHTML = `<div class="readout"><span class="num">${ms}<span class="u">ms</span></span><span class="tag ${ms >= 120 ? "bad" : "ok"}">${ms >= 120 ? "largo" : "estreito"}</span></div><div class="kv"><span>Quadradinhos</span><span>${quadr(ms)}</span></div>`;
     }
   };
   montarVisor("#visor", {modo:alvo === "fc" ? "fc" : "int", pontos:c.pontos[alvo], aoMudar:out});
