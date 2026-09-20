@@ -318,3 +318,6 @@ p{margin:0}
 .gloss div:first-child{border-top:0}
 .gloss b{display:block;font-weight:500;font-size:.92rem}
 .gloss span{display:block;font-size:.82rem;color:var(--mute);margin-top:2px}
+/* v5: item de checklist que o app já sabe (eixo da etapa 5) — mostrado, não clicável */
+.opt.fixo{cursor:default;opacity:.8}.opt.fixo small{display:block;font-size:.74rem;margin-top:2px}
+.opt:disabled:active{transform:none}
