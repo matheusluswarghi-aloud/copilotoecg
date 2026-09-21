@@ -333,9 +333,26 @@ p{margin:0}
 .visor .zoomtag{position:absolute;top:10px;right:10px;background:rgba(8,8,10,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.12);color:#fff;font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;padding:5px 8px;border-radius:var(--r-pill);pointer-events:none}
 .visor .tools{position:absolute;top:10px;left:10px;display:flex;gap:6px}
 .visor .tools button{appearance:none;border:1px solid rgba(255,255,255,.14);background:rgba(8,8,10,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#fff;border-radius:var(--r-pill);padding:6px 11px;font-size:.78rem;font-weight:500;cursor:pointer}
-.visor.seq{height:40vh;min-height:220px}
 .visor.full{height:52vh;min-height:260px}
 .visor.tudo{flex:1;min-height:0;margin-bottom:12px}
+
+/* foto no topo da etapa: acompanha a leitura inteira, entre a barra de progresso e as perguntas */
+.dock{flex:none;margin:0 18px 8px}
+.dock.aberto .visor{height:26vh;min-height:170px;max-height:260px;margin:0}
+.visor .tools.dir{left:auto;right:10px;top:auto;bottom:10px}
+.visor .tools.dir button{width:34px;height:34px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.visor .tools.dir svg{width:16px;height:16px}
+.dock.pilula{appearance:none;display:flex;align-items:center;gap:10px;width:calc(100% - 36px);height:44px;padding:5px 12px 5px 5px;border-radius:var(--r-pill);border:1px solid var(--edge);background:linear-gradient(140deg,var(--glass-2),var(--glass));color:var(--ink-2);font-size:.84rem;cursor:pointer;box-shadow:inset 0 1px 0 var(--hi)}
+.dock.pilula img{width:56px;height:34px;object-fit:cover;border-radius:var(--r-pill);border:1px solid var(--edge-2)}
+.dock.pilula span{flex:1;text-align:left}
+.dock.pilula svg{width:16px;height:16px;color:var(--mute)}
+.dock.vazio{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 6px 6px 12px;border:1px dashed var(--edge-2);border-radius:var(--r-pill)}
+.dock.vazio .rot{display:inline-flex;align-items:center;gap:7px;font-size:.8rem;color:var(--mute)}
+.dock.vazio .rot svg{width:15px;height:15px}
+.dock.vazio .acoes{display:flex;gap:5px}
+.dock.vazio .chip{padding:6px 11px;font-size:.78rem}
+/* a linha continua fina, mas o dedo pega 44 px: a área de toque cresce para fora, sem mexer no desenho */
+.dock.vazio .chip::after{content:"";position:absolute;left:0;right:0;top:-6px;bottom:-6px}
 .dropzone{appearance:none;border-style:dashed;border-color:var(--edge-2);border-radius:var(--r);padding:26px 16px;text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center;cursor:pointer;color:var(--ink);transition:border-color .2s,transform .18s var(--spring)}
 .dropzone svg{width:30px;height:30px;color:var(--mute)}
 .dropzone strong{font-weight:500}

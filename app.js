@@ -36,7 +36,7 @@ const gravarJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v));
 /* ---------- estado ---------- */
 function nova(){
   return { id:"L" + Date.now(), quando:Date.now(), motivo:null,
-    tela:null, foto:null, blob:null, escala:null, calQuadrados:5,
+    tela:null, foto:null, blob:null, thumb:null, escala:null, calQuadrados:5,
     pontos:{cal:null, fc:null, qrs:null, qt:null},
     passo:2, r:{}, conf:{}, salva:false };
 }
@@ -44,6 +44,7 @@ const S = {
   tela:"inicio", aba:"inicio", cur:nova(), leituras:lerJSON(CHAVE, []), editando:null,
   prefs:Object.assign({nome:"", assinatura:true, tema:"escuro"}, lerJSON(CHAVE_PREFS, {})),
   visor:null, vista:null, detalhe:null, aberto:{}, medir:null, calc:{},
+  dock:"aberto", fotoOrigem:null, verVolta:"seq",
   filtro:{busca:"", motivo:"todas", atencao:false}, guiaAba:"calc"
 };
 function aplicarTema(){ document.documentElement.setAttribute("data-theme", S.prefs.tema === "claro" ? "light" : "dark"); }
@@ -363,6 +364,7 @@ function proximoPasso(){
 
 /* ---------- foto ---------- */
 function pedirFoto(fonte){
+  S.fotoOrigem = S.tela === "seq" ? "seq" : null; // foto pedida pelo dock volta para a etapa, não para o começo
   if (fonte === "camera") inputArquivo.setAttribute("capture", "environment");
   else inputArquivo.removeAttribute("capture");
   inputArquivo.click();
@@ -433,7 +435,12 @@ class Visor{
     this.ctx = this.canvas.getContext("2d");
     this.ponteiros = new Map(); this.pegou = -1; this.pinca = null;
     this.ajustar();
-    if (S.vista) this.v = Object.assign({}, S.vista);
+    // o enquadramento guardado tem o centro em coordenadas da imagem: vale em visores de tamanhos diferentes
+    if (S.vista){
+      this.v.escala = S.vista.escala; this.v.giro = S.vista.giro;
+      const p = this.paraTela({x:S.vista.cx, y:S.vista.cy});          // onde o centro guardado cairia agora
+      this.v.tx += this.larg / 2 - p.x; this.v.ty += this.alt / 2 - p.y;
+    }
     this.canvas.addEventListener("pointerdown", e => this.baixou(e));
     this.canvas.addEventListener("pointermove", e => this.moveu(e));
     this.canvas.addEventListener("pointerup", e => this.soltou(e));
@@ -531,7 +538,8 @@ class Visor{
     c.drawImage(this.tela, -this.tela.width/2, -this.tela.height/2);
     c.restore();
     if (this.pontos && this.pontos.length === 2) this.desenharCompasso();
-    S.vista = Object.assign({}, this.v);
+    const m = this.paraImagem({x:this.larg / 2, y:this.alt / 2});
+    S.vista = {escala:this.v.escala, giro:this.v.giro, cx:m.x, cy:m.y};
     const z = this.host.querySelector(".zoomtag");
     if (z) z.textContent = Math.round(this.v.escala * 100) + "%";
   }
@@ -623,6 +631,8 @@ const I = {
   regua:svg('<path d="M3 17 17 3l4 4L7 21z"/><path d="M8 12l2 2M11 9l2 2M14 6l2 2"/>'),
   check:svg('<path d="M5 12l5 5L20 7"/>'),
   ecg:svg('<path d="M3 12h4l2-6 3 12 3-8 2 2h4"/>'),
+  expandir:svg('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
+  recolher:svg('<path d="M6 15l6-6 6 6"/>'),
   guia:svg('<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 18.5A2.5 2.5 0 0 1 6.5 16H20"/><path d="M9 8h7M9 11.5h5"/>'),
   vazio:svg('<path d="M3 12h3l2-5 3 10 3-8 2 3h5"/><path d="M4 19h16" stroke-dasharray="2 3"/>')
 };
@@ -647,6 +657,18 @@ function qrsFig(tipo){
   return `<svg viewBox="0 0 80 100" class="fig" aria-hidden="true"><line x1="0" y1="${base}" x2="80" y2="${base}" stroke="var(--line-3)" stroke-dasharray="3 3"/><path d="${d}" fill="none" stroke="var(--ink)" stroke-width="2.4" stroke-linejoin="round"/></svg>`;
 }
 function progresso(i){ return `<div class="prog" style="grid-template-columns:repeat(${ULTIMO},1fr)">${Array.from({length:ULTIMO}, (_, k) => `<i class="${k+1 < i ? "done" : k+1 === i ? "now" : ""}"></i>`).join("")}</div>`; }
+/* a foto acompanha a leitura: mora na casca da etapa, entre o progresso e o miolo, e sobrevive a cada resposta */
+function dockHTML(modo){
+  const c = S.cur;
+  if (!c.tela) return modo === "laudo" ? "" : `<div class="dock vazio"><span class="rot">${I.camera}Adicionar foto do eletro</span><span class="acoes"><button class="chip" type="button" data-fonte="camera">Câmera</button><button class="chip" type="button" data-fonte="galeria">Galeria</button></span></div>`;
+  if (!c.thumb) c.thumb = miniatura();
+  if (modo === "laudo") return `<button class="dock pilula" type="button" data-ver="1"><img src="${c.thumb}" alt=""><span>Eletro</span>${I.expandir}</button>`;
+  if (S.dock === "pilula") return `<button class="dock pilula" type="button" data-dock="abrir"><img src="${c.thumb}" alt=""><span>Eletro</span>${I.expandir}</button>`;
+  return `<div class="dock aberto"><div class="visor" id="visor">
+    <div class="tools"><button type="button" data-zoom="1.6">+</button><button type="button" data-zoom="0.65">−</button><button type="button" data-fit="1">ajustar</button></div>
+    <div class="tools dir"><button type="button" data-ver="1" aria-label="Tela cheia">${I.expandir}</button><button type="button" data-dock="recolher" aria-label="Recolher a foto">${I.recolher}</button></div>
+    <div class="zoomtag">100%</div></div></div>`;
+}
 const dois = n => String(n).padStart(2, "0");
 function topo(passo, titulo, extra){
   return `<div class="top"><span class="ghostnum" aria-hidden="true">${dois(passo)}</span><button class="icobtn ghost" type="button" data-voltar="1" aria-label="Voltar">${I.voltar}</button>
@@ -887,7 +909,7 @@ function guia(){
       <p class="tiny mute">Prolongado: > 450 ms no masculino, ≥ 460 ms no feminino. Curto: < 350 ms.</p></div>`;
   } else if (aba === "uso"){
     corpo = `<div class="card"><h3>A sequência</h3><p class="small ink2">Motivo do exame → técnica → ritmo → regularidade e frequência → eixo → descarte de arritmias → descarte de isquemia → QRS → intervalo QT → padrões especiais → volte ao paciente. O Copiloto guarda cada resposta e usa nas etapas seguintes, sem perguntar de novo: a largura do QRS, o eixo, a FC e o QTc são reaproveitados.</p></div>
-      <div class="card"><h3>A foto é opcional</h3><p class="small ink2">Você pode ler direto no papel. Com a foto, o eletro fica à mão durante a leitura (o olho no topo da etapa) e dá para medir com a régua na tela. <b>Câmera</b> fotografa na hora; <b>Galeria</b> usa uma foto já tirada.</p></div>
+      <div class="card"><h3>A foto é opcional</h3><p class="small ink2">Você pode ler direto no papel. Com a foto, o eletro fica no topo de todas as etapas — dá para dar zoom, recolher e abrir em tela cheia — e dá para medir com a régua na tela. <b>Câmera</b> fotografa na hora; <b>Galeria</b> usa uma foto já tirada.</p></div>
       <div class="card"><h3>A régua na foto</h3><p class="small ink2">Antes de medir, arraste as duas bolinhas sobre cinco quadradões (1 segundo de papel). O app aprende a escala daquela foto e passa a medir em milissegundos.</p></div>
       <div class="card"><h3>O laudo</h3><p class="small ink2">O texto final é montado com as suas respostas e pode sair assinado com o seu nome (Configurações). Confira antes de copiar.</p></div>
       <div class="card"><h3>Privacidade</h3><p class="small ink2">A foto e as respostas ficam neste aparelho. O app não envia nada para servidor nenhum.</p></div>`;
@@ -946,7 +968,7 @@ function telaFoto(){
   const c = S.cur;
   if (!c.tela){
     return `<div class="screen">
-    <div class="top"><button class="icobtn ghost" type="button" data-ir="motivo" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>Quer usar a foto do eletro?</strong></div></div>
+    <div class="top"><button class="icobtn ghost" type="button" data-ir="${S.fotoOrigem === "seq" ? "seq" : "motivo"}" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>Quer usar a foto do eletro?</strong></div></div>
     <div class="scroll stagger">
       <p class="small mute">Com a foto, o traçado fica à mão durante toda a leitura e dá para medir com a régua na tela. Sem ela, você lê direto no papel.</p>
       <button class="dropzone" type="button" data-fonte="camera">${I.camera}<strong>Fotografar o eletro</strong><span class="mute tiny">Abre a câmera</span></button>
@@ -958,7 +980,7 @@ function telaFoto(){
   }
   const q = c.foto, avisos = avisosFoto(q), ruim = avisos.some(a => a.n === "bad");
   return `<div class="screen">
-  <div class="top"><button class="icobtn ghost" type="button" data-ir="motivo" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>A foto ficou boa?</strong></div></div>
+  <div class="top"><button class="icobtn ghost" type="button" data-ir="${S.fotoOrigem === "seq" ? "seq" : "motivo"}" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>A foto ficou boa?</strong></div></div>
   ${visorHTML("full", "Arraste para mover, pince para aproximar.")}
   <div class="scroll stagger" style="padding-top:12px">
     ${avisos.length ? avisos.map(a => ins(a.n, a.t, a.d)).join("") : ins("ok", "Foto boa", "Nitidez, luz e tamanho estão dentro do esperado.")}
@@ -1308,8 +1330,9 @@ const ETAPAS = {
 function telaSeq(){
   const i = S.cur.passo, dir = S.dir || ""; S.dir = "";
   return `<div class="screen ${dir}" data-passo="${i}">
-  ${topo(i, PASSOS[i], `${S.cur.tela ? `<button class="icobtn" type="button" data-ver="1" aria-label="Ver o eletro">${I.olho}</button>` : ""}<button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Sair">${I.fechar}</button>`)}
+  ${topo(i, PASSOS[i], `<button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Sair">${I.fechar}</button>`)}
   ${progresso(i)}
+  ${dockHTML()}
   <div class="scroll seq stagger" id="seq-scroll"></div>
   <div class="foot">${pilula()}<button class="btn primary" type="button" id="proxima" disabled>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
 }
@@ -1457,6 +1480,7 @@ function telaLaudo(){
   return `<div class="screen">
   ${topo(11, "Volte ao paciente", `<button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Fechar">${I.fechar}</button>`)}
   ${progresso(11)}
+  ${dockHTML("laudo")}
   <div class="scroll seq stagger" id="seq-scroll">
     ${m ? `<div class="orient"><span class="eyebrow">Contexto informado · ${m.curto}</span><p>${m.texto[0]}</p></div>` : ""}
     ${s.atencao.length ? ins("bad", s.atencao.length === 1 ? "1 ponto de atenção" : s.atencao.length + " pontos de atenção", s.atencao.join(" · ")) : ins("ok", "Nenhum ponto de atenção nas etapas avaliadas", "")}
@@ -1563,7 +1587,8 @@ function salvarLeitura(){
 }
 function soltarVisor(){ if (S.visor){ S.visor.destruir(); S.visor = null; } }
 function irPara(t){
-  if (t === "motivo" && S.tela !== "foto" && S.tela !== "seq"){ S.cur = nova(); S.vista = null; S.aberto = {}; }
+  if (t === "motivo" && S.tela !== "foto" && S.tela !== "seq"){ S.cur = nova(); S.vista = null; S.aberto = {}; S.dock = "aberto"; S.fotoOrigem = null; }
+  if (t === "foto") S.fotoOrigem = null; // só se chega aqui pelo "Iniciar leitura": o voltar é para o motivo
   S.editando = null;
   soltarVisor();
   S.tela = t;
@@ -1588,6 +1613,7 @@ function desenhar(inteira){
   }
   const telas = { inicio:() => ({inicio, biblioteca, guia, config}[S.aba] || inicio)(),
     motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo };
+  soltarVisor(); // a tela inteira é refeita: o visor que ficaria órfão levaria o S.vista junto no próximo resize
   app.innerHTML = (telas[S.tela] || telas.inicio)();
   animarNumeros(); montarMonitor();
   ligar(app);
@@ -1595,6 +1621,7 @@ function desenhar(inteira){
 
   if (S.tela === "foto" && S.cur.tela) montarVisor("#visor", {modo:"livre"});
   if (S.tela === "ver") montarVisor("#visor", {modo:"livre"});
+  if (S.tela === "seq" && S.cur.tela && S.dock !== "pilula") montarVisor("#visor", {modo:"livre"});
   if (S.tela === "medir") ligarMedir();
   if (S.tela === "seq") desenharMiolo(); // o miolo nasce vazio na casca
   escalonar();
@@ -1612,8 +1639,9 @@ function ligar(raiz){
   raiz.querySelectorAll("[data-fonte]").forEach(b => b.onclick = () => pedirFoto(b.dataset.fonte));
   raiz.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const k = b.dataset.toggle; S.aberto[k] = !S.aberto[k]; manterRolagem(desenhar); });
   raiz.querySelectorAll("[data-quad]").forEach(b => b.onclick = () => { S.cur.calQuadrados = +b.dataset.quad; desenhar(); });
-  raiz.querySelectorAll("[data-ver]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = "ver"; desenhar(); });
-  raiz.querySelectorAll("[data-fechar-ver]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = "seq"; desenhar(); });
+  raiz.querySelectorAll("[data-dock]").forEach(b => b.onclick = () => { S.dock = b.dataset.dock === "recolher" ? "pilula" : "aberto"; soltarVisor(); desenhar(true); });
+  raiz.querySelectorAll("[data-ver]").forEach(b => b.onclick = () => { S.verVolta = S.tela === "laudo" ? "laudo" : "seq"; soltarVisor(); S.tela = "ver"; desenhar(); });
+  raiz.querySelectorAll("[data-fechar-ver]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = S.verVolta; desenhar(true); });
   raiz.querySelectorAll("[data-medir]").forEach(b => b.onclick = () => { S.medir = {alvo:b.dataset.medir, chave:b.dataset.chave || null}; soltarVisor(); S.tela = "medir"; desenhar(); });
   raiz.querySelectorAll("[data-discutir]").forEach(b => b.onclick = () => {
     const txt = resumo().texto + assinatura();
@@ -1794,7 +1822,7 @@ inputArquivo.addEventListener("change", async () => {
     S.cur.tela = tela;
     S.cur.foto = analisarQualidade(tela);
     S.cur.escala = null; S.cur.pontos = {cal:null, fc:null, qrs:null, qt:null};
-    S.vista = null;
+    S.cur.thumb = null; S.vista = null;
     tela.toBlob(b => { S.cur.blob = b; }, "image/jpeg", .88);
     soltarVisor();
     S.tela = "foto";
