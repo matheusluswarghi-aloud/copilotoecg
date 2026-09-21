@@ -42,14 +42,14 @@ function nova(){
   return { id:"L" + Date.now(), quando:Date.now(), motivo:null,
     tela:null, foto:null, blob:null, thumb:null, escala:null, calQuadrados:5,
     pontos:{cal:null, fc:null, qrs:null, qt:null},
-    passo:2, r:{}, conf:{}, salva:false };
+    passo:2, r:{}, conf:{} };
 }
 const S = {
   tela:"inicio", aba:"inicio", cur:nova(), leituras:lerJSON(CHAVE, []), editando:null,
   prefs:Object.assign({nome:"", assinatura:true, tema:"escuro"}, lerJSON(CHAVE_PREFS, {})),
   visor:null, vista:null, detalhe:null, aberto:{}, medir:null, calc:{},
   dock:"aberto", fotoOrigem:null, verVolta:"seq",
-  filtro:{busca:"", motivo:"todas", atencao:false}, guiaAba:"calc"
+  filtro:{busca:"", motivo:"todas", atencao:false}, guiaAba:"calc", guiaFoco:null
 };
 function aplicarTema(){ document.documentElement.setAttribute("data-theme", S.prefs.tema === "claro" ? "light" : "dark"); }
 aplicarTema();
@@ -671,7 +671,6 @@ const I = {
   camera:svg('<rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="12" cy="13.5" r="3.4"/><path d="M8 7l1.4-2h5.2L16 7"/>'),
   galeria:svg('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>'),
   copiar:svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>'),
-  salvar:svg('<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>'),
   lixo:svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
   regua:svg('<path d="M3 17 17 3l4 4L7 21z"/><path d="M8 12l2 2M11 9l2 2M14 6l2 2"/>'),
   check:svg('<path d="M5 12l5 5L20 7"/>'),
@@ -687,7 +686,7 @@ function opt(chave, valor, rotulo, multi){
   const on = multi ? (atual || []).includes(valor) : atual === valor;
   return `<button type="button" class="opt${multi ? " multi" : ""}" data-ans="${chave}" data-val="${valor}" data-multi="${multi ? 1 : 0}" aria-pressed="${on}"><span>${rotulo}</span></button>`;
 }
-function ins(k, t, d){ return `<div class="ins ${k}${k === "ok" && !d ? " mini" : ""}"><strong>${t}</strong>${d ? `<p>${d}</p>` : ""}</div>`; }
+function ins(k, t, d, id){ return `<div class="ins ${k}${k === "ok" && !d ? " mini" : ""}"${id ? ` id="${id}"` : ""}><strong>${t}</strong>${d ? `<p>${d}</p>` : ""}</div>`; }
 const terrHTML = () => `<div class="terr">${TERR.map(([, b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div>`;
 function pendente(o){ return `<div class="pendente"><span class="tag">a enviar</span> ${o}</div>`; }
 /* "↓ continua" mora no rodapé, em fluxo: linha própria acima do botão, nunca por cima do conteúdo.
@@ -786,6 +785,7 @@ function dataCurta(ms){
 }
 
 /* ---------- painel ---------- */
+/* na ordem de quem acabou de receber um eletro na mão: ler agora e os dois atalhos antes de qualquer número */
 function inicio(){
   const ult = S.leituras.slice(0, 2), n = S.leituras.length, at = S.leituras.filter(l => l.alerta).length;
   const top = contagemMotivos()[0];
@@ -800,17 +800,18 @@ function inicio(){
     ${and ? `<div class="card grad glow cont"><span class="eyebrow">Leitura em andamento</span><strong>${mAnd ? mAnd.nome : "Leitura"}</strong>
       <p class="tiny">Etapa ${and.passo} de ${ULTIMO} · ${PASSOS[and.passo]} · ${haQuanto(and.salvoEm)}</p>
       <div class="row2"><button class="btn" type="button" data-descartar="1">Descartar</button><button class="btn primary" type="button" data-continuar="1">Continuar</button></div></div>` : ""}
+    <button class="btn ${and ? "" : "primary "}big wide" type="button" data-ir="motivo">${I.ecg}Ler um eletro agora</button>
+    <div class="row2"><button class="btn" type="button" data-atalho="fc">Calcular FC</button><button class="btn" type="button" data-atalho="qtc">Calcular QTc</button></div>
     ${monitorHTML()}
+    <div class="sec"><h3>Suas leituras</h3>${n ? `<button class="textbtn" type="button" data-aba="biblioteca">Ver todas ${I.seta}</button>` : ""}</div>
+    ${n ? `<div class="rgrid">${ult.map(cardLeitura).join("")}</div>`
+      : `<div class="card"><div class="empty" style="padding:14px 6px"><p class="ink2">Nenhuma leitura guardada.</p><p class="tiny">A primeira fica aqui, com o laudo e a foto. Nada sai deste aparelho.</p></div></div>`}
     <div class="stats">
       <div class="stat"><span class="n" data-count="${n}">0</span><span class="l">leitura${n === 1 ? "" : "s"}</span></div>
       <div class="stat"><span class="n" data-count="${at}">0</span><span class="l">com atenção</span></div>
       <div class="stat"><span class="n" data-count="${semana()}">0</span><span class="l">esta semana</span></div>
     </div>
-    <button class="btn primary big wide" type="button" data-ir="motivo">${I.ecg}Ler um eletro agora</button>
     <div class="card"><div class="sec" style="margin:0"><h3>Últimos 7 dias</h3><span class="tiny mute">${top ? "mais comum: " + nomeTop : "por dia"}</span></div>${barrasSemana()}</div>
-    <div class="sec"><h3>Suas leituras</h3>${n ? `<button class="textbtn" type="button" data-aba="biblioteca">Ver todas ${I.seta}</button>` : ""}</div>
-    ${n ? `<div class="rgrid">${ult.map(cardLeitura).join("")}</div>`
-      : `<div class="card"><div class="empty" style="padding:14px 6px"><p class="ink2">Nenhuma leitura guardada.</p><p class="tiny">A primeira fica aqui, com o laudo e a foto. Nada sai deste aparelho.</p></div></div>`}
     <div class="card"><div class="sec" style="margin:0"><h3>Mapa de leituras</h3><span class="tiny mute">12 semanas</span></div>
       <div class="dots">${mapaDias()}</div>
       <p class="tiny mute">Cada ponto é um dia. Quanto mais claro, mais eletros lidos.</p></div>
@@ -903,12 +904,12 @@ function guia(){
   const aba = S.guiaAba, t = (k, l) => `<button class="chip" type="button" data-guia="${k}" aria-pressed="${aba === k}">${l}</button>`;
   let corpo = "";
   if (aba === "calc"){
-    corpo = `<div class="card"><h3>Frequência cardíaca</h3>
+    corpo = `<div class="card" id="calc-fc"><h3>Frequência cardíaca</h3>
       <p class="tiny mute">Quadradinhos entre dois QRS · 1500 ÷ n. Quadrados grandes entre dois QRS · 300 ÷ n.</p>
       <div data-ctl="g-rr"></div>
       <div data-ctl="g-c10"></div>
     </div>
-    <div class="card"><h3>QT corrigido (Bazett)</h3><p class="tiny mute">QTc = QT ÷ √RR, com RR em segundos.</p>
+    <div class="card" id="calc-qtc"><h3>QT corrigido (Bazett)</h3><p class="tiny mute">QTc = QT ÷ √RR, com RR em segundos.</p>
       <div data-ctl="g-qt"></div>
       <div data-ctl="g-fc"></div>
       <p class="tiny mute">Prolongado: > 450 ms no masculino, ≥ 460 ms no feminino. Curto: < 350 ms.</p></div>`;
@@ -929,7 +930,7 @@ function guia(){
   }
   return `<div class="screen">
   <div class="top"><div class="t"><small>Copiloto</small><strong>Guia</strong></div>${I.guia.replace("<svg", '<svg style="width:22px;height:22px;color:var(--mute)"')}</div>
-  <div class="scroll stagger com-nav">
+  <div class="scroll stagger com-nav${S.guiaFoco ? " foco" : ""}">
     <div class="hscroll">${t("calc","Calculadoras")}${t("uso","Como usar")}${t("gloss","Termos")}</div>
     ${corpo}
   </div>${nav()}</div>`;
@@ -1524,6 +1525,8 @@ function resumo(){
   const titulo = conc.length ? conc[0].charAt(0).toUpperCase() + conc[0].slice(1) + (conc.length > 1 ? " + " + (conc.length - 1) : "") : (a.pronto ? a.res.t + ", sem alterações" : "Sem alterações nas etapas avaliadas");
   return {texto, titulo, atencao, blocos, frases};
 }
+/* na ordem de quem está no plantão: o que não pode passar → o que fazer → o texto para o prontuário.
+   Os blocos numerados viram consulta ("Ver etapa por etapa"); o próximo passo clínico nasce aberto. */
 function telaLaudo(){
   const s = resumo(), m = motivo(), pp = proximoPasso();
   return `<div class="screen">
@@ -1532,21 +1535,21 @@ function telaLaudo(){
   ${dockHTML("laudo")}
   <div class="scroll seq stagger" id="seq-scroll">
     ${m ? `<div class="orient"><span class="eyebrow">Contexto informado · ${m.curto}</span><p>${m.texto[0]}</p></div>` : ""}
-    ${s.atencao.length ? ins("bad", s.atencao.length === 1 ? "1 ponto de atenção" : s.atencao.length + " pontos de atenção", s.atencao.join(" · ")) : ins("ok", "Nenhum ponto de atenção nas etapas avaliadas", "")}
-    <div class="sec"><h3>11.1 — Sua interpretação do ECG</h3><span class="tiny mute">resumo do ECG</span></div>
-    ${s.blocos.map((b, i) => `<div class="ins ${b.k}"><span class="ix">${dois(i + 1)} · ${b.t.toUpperCase()}</span><strong>${b.v}</strong>${b.d ? `<p>${b.d}</p>` : ""}</div>`).join("")}
-    <div class="sec"><h3>Interpretação estruturada</h3><span class="tag ok salva">Salva neste aparelho</span></div>
-    <div class="laudo" id="laudo">${s.texto}${assinatura() ? `<div class="sig">${assinatura().trim()}</div>` : ""}</div>
-    <button class="btn wide" type="button" data-copiar="1">${I.copiar}Copiar</button>
+    ${s.atencao.length ? ins("bad", s.atencao.length === 1 ? "1 ponto de atenção" : s.atencao.length + " pontos de atenção", s.atencao.join(" · "), "pontos") : ins("ok", "Nenhum ponto de atenção nas etapas avaliadas", "", "pontos")}
     <div class="sec"><h3>Próximo passo clínico</h3><span class="tiny mute">orientação inicial</span></div>
-    <button class="btn wide" type="button" data-toggle="proximo" aria-expanded="${!!S.aberto.proximo}">${S.aberto.proximo ? I.fechar + "Fechar" : I.seta + "A partir do que você identificou, lembre-se"}</button>
-    ${S.aberto.proximo ? (pp.length ? pp.map(c => `<div class="card"><span class="eyebrow">${c.t}</span>${c.p.map(x => `<p class="small ink2">${x}</p>`).join("")}</div>`).join("")
-      : `<div class="card"><span class="eyebrow">Agora volte ao paciente</span><p class="small ink2">Relacione os achados eletrocardiográficos ao quadro clínico, exame físico e demais informações disponíveis.</p><p class="small ink2">O ECG é uma parte do raciocínio clínico e não o raciocínio inteiro.</p></div>`) : ""}
+    <div class="passos" id="proximo-passo"><p class="tiny mute">A partir do que você identificou, lembre-se:</p>
+    ${pp.length ? pp.map(c => `<div class="card conduta"><span class="eyebrow">${c.t}</span>${c.p.map(x => `<p class="small ink2">${x}</p>`).join("")}</div>`).join("")
+      : `<div class="card conduta"><span class="eyebrow">Agora volte ao paciente</span><p class="small ink2">Relacione os achados eletrocardiográficos ao quadro clínico, exame físico e demais informações disponíveis.</p><p class="small ink2">O ECG é uma parte do raciocínio clínico e não o raciocínio inteiro.</p></div>`}</div>
+    <div class="sec"><h3>11.1 — Sua interpretação do ECG</h3></div>
+    <div class="laudo" id="laudo">${s.texto}${assinatura() ? `<div class="sig">${assinatura().trim()}</div>` : ""}</div>
+    <div class="salvo"><span class="tag ok salva">Salva neste aparelho</span></div>
+    <button class="btn wide" type="button" data-toggle="blocos" aria-expanded="${!!S.aberto.blocos}">${S.aberto.blocos ? I.recolher + "Ocultar etapa por etapa" : I.seta + "Ver etapa por etapa"}</button>
+    ${S.aberto.blocos ? s.blocos.map((b, i) => `<div class="ins ${b.k}"><span class="ix">${dois(i + 1)} · ${b.t.toUpperCase()}</span><strong>${b.v}</strong>${b.d ? `<p>${b.d}</p>` : ""}</div>`).join("") : ""}
     <button class="btn wide" type="button" data-discutir="1">Discutir no grupo Plantão Descomplicado</button>
     ${pendente("Link do grupo Plantão Descomplicado (nome e destino a definir com o Dr. Vitor). Por ora, o botão copia a interpretação.")}
     <p class="tiny mute" style="text-align:center">Quem leu foi você. O Copiloto garantiu que nenhuma etapa ficou para trás e fez as contas.</p>
   </div>
-  <div class="foot">${pilula()}<button class="btn primary" type="button" data-ir="motivo">Iniciar novo ECG ${I.seta}</button></div></div>`;
+  <div class="foot">${pilula()}<button class="btn" type="button" data-ir="motivo">Novo ECG</button><button class="btn primary" type="button" data-copiar="1">${I.copiar}Copiar interpretação</button></div></div>`;
 }
 
 /* ---------- desenhar e ligar ---------- */
@@ -1631,7 +1634,6 @@ function salvarLeitura(o){
   S.leituras = [reg].concat(S.leituras.filter(l => l.id !== reg.id));
   gravarJSON(CHAVE, S.leituras);
   if (S.cur.blob) guardarFoto(S.cur.id, S.cur.blob);
-  S.cur.salva = true;
   descartarAndamento();
   if (o && o.silencioso) return;
   aviso("Salvo neste aparelho");
@@ -1677,6 +1679,9 @@ function desenhar(inteira){
   if (S.tela === "seq" && S.cur.tela && S.dock !== "pilula") montarVisor("#visor", {modo:"livre"});
   if (S.tela === "medir") ligarMedir();
   if (S.tela === "seq") desenharMiolo(); // o miolo nasce vazio na casca
+  // atalho do início: a calculadora pedida encosta no topo. A conta é de layout (offsetTop), porque a
+  // entrada escalonada ainda está deslocando o cartão e o scrollIntoView pararia uns 12 px acima.
+  if (S.guiaFoco){ const c = document.getElementById("calc-" + S.guiaFoco); if (c) c.parentNode.scrollTop = c.offsetTop - c.parentNode.offsetTop; S.guiaFoco = null; }
   escalonar();
   atualizarContinua(); setTimeout(atualizarContinua, 400);
   if (["foto", "seq", "medir", "ver"].includes(S.tela)) gravarAndamento();
@@ -1695,6 +1700,8 @@ function ligar(raiz){
   raiz.querySelectorAll("[data-continuar]").forEach(b => b.onclick = () => continuarLeitura());
   raiz.querySelectorAll("[data-descartar]").forEach(b => b.onclick = () => { descartarAndamento(); S.cur = nova(); desenhar(true); });
   raiz.querySelectorAll("[data-instalar]").forEach(b => b.onclick = () => { const e = S.instalar; if (!e) return; S.instalar = null; try { e.prompt(); } catch(_){} });
+  // atalho do início: abre o Guia já nas calculadoras, com a calculadora pedida no topo (quem rola é o desenhar)
+  raiz.querySelectorAll("[data-atalho]").forEach(b => b.onclick = () => { S.guiaAba = "calc"; S.guiaFoco = b.dataset.atalho; irAba("guia"); });
   raiz.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const k = b.dataset.toggle; S.aberto[k] = !S.aberto[k]; manterRolagem(desenhar); });
   raiz.querySelectorAll("[data-quad]").forEach(b => b.onclick = () => { S.cur.calQuadrados = +b.dataset.quad; desenhar(); });
   // abrir/recolher muda a altura da área de rolagem: a casca é remontada, mas a leitura fica onde estava
