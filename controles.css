@@ -1,0 +1,100 @@
+/* Copiloto de ECG — controles de arrastar (fita, traçado, contador).
+   Só tokens de style.css. Tudo que é novo começa com `ctl`. */
+
+.ctl{display:flex;flex-direction:column;gap:12px;font-family:var(--sans);-webkit-user-select:none;user-select:none}
+.ctl-rot{font-size:.82rem;line-height:1.3;color:var(--mute)}
+
+/* ---------- leitura: número grande e fino, como o .num do app ---------- */
+.ctl-leitura{display:flex;align-items:baseline;gap:10px;min-width:0}
+.ctl-num{appearance:none;border:0;background:transparent;padding:0;margin:0;display:inline-flex;align-items:baseline;gap:5px;
+  color:var(--ink);font-family:inherit;font-weight:300;font-size:2.9rem;line-height:1;letter-spacing:-.045em;
+  font-variant-numeric:tabular-nums;text-align:left;transition:color .2s,opacity .2s}
+.ctl-num .n{position:relative;display:inline-block}
+.ctl-num .u{font-size:.85rem;font-weight:400;letter-spacing:0;color:var(--mute)}
+button.ctl-num{cursor:pointer}
+button.ctl-num .n::after{content:"";position:absolute;left:1px;right:1px;bottom:2px;height:1px;background:currentColor;opacity:.16;transition:opacity .2s}
+button.ctl-num:active .n::after,button.ctl-num:hover .n::after{opacity:.45}
+.ctl.vazia button.ctl-num .n::after{display:none}   /* o "—" já parece um risco; dois viram sujeira */
+.ctl-inp{width:3.6ch;max-width:100%;font:inherit;color:var(--ink);background:transparent;border:0;border-bottom:1px solid var(--violet);
+  padding:0;margin:0;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
+.ctl-inp::-webkit-outer-spin-button,.ctl-inp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.ctl-inp:focus{outline:0}
+.ctl .zona{flex:none;align-self:center}
+
+/* ---------- linha de controle ---------- */
+.ctl-linha{display:flex;align-items:stretch;gap:10px}
+.ctl-passo{appearance:none;flex:none;width:44px;min-height:44px;border-radius:var(--r-sm);display:inline-flex;align-items:center;justify-content:center;
+  font-size:1.3rem;font-weight:400;line-height:1;color:var(--ink-2);cursor:pointer;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);
+  box-shadow:inset 0 1px 0 var(--hi),inset 0 -1px 0 rgba(0,0,0,.28);
+  transition:transform .18s var(--spring),background .2s,color .2s}
+.ctl-passo:active{transform:scale(.92);color:var(--ink);background:var(--glass-3)}
+.ctl-passo[data-zerar]{font-size:1.05rem;font-weight:500}
+
+/* ---------- fita: régua correndo sob a agulha central ---------- */
+.ctl-trilho{position:relative;flex:1;min-width:0;height:60px;border-radius:var(--r-sm);overflow:hidden;
+  touch-action:pan-y;cursor:ew-resize;
+  background:linear-gradient(180deg,rgba(0,0,0,.26),rgba(0,0,0,.10));border:1px solid var(--edge);
+  box-shadow:inset 0 1px 0 var(--hi),inset 0 10px 20px -14px rgba(0,0,0,.9);
+  transition:border-color .2s,box-shadow .2s}
+:root[data-theme="light"] .ctl-trilho{background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.42));border-color:var(--edge-2);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.9),inset 0 10px 22px -14px rgba(0,0,0,.5)}
+.ctl-trilho:focus{outline:0}
+.ctl-trilho:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.ctl-trilho.sem-anel:focus-visible{outline:0}   /* foco que veio do dedo, não do teclado */
+/* canal central: dá profundidade sem tapar os números da régua */
+.ctl-trilho::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:20px;transform:translateX(-50%);z-index:0;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.045) 48%,rgba(255,255,255,.045) 52%,transparent)}
+:root[data-theme="light"] .ctl-trilho::before{background:linear-gradient(90deg,transparent,rgba(0,0,0,.035) 48%,rgba(0,0,0,.035) 52%,transparent)}
+.ctl-trilho canvas{display:block;position:relative;z-index:1;width:100%;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 9%,#000 91%,transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0,#000 9%,#000 91%,transparent 100%)}
+
+.ctl-agulha{position:absolute;left:50%;top:0;bottom:0;width:0;z-index:2;transform:translateX(-50%);pointer-events:none;color:var(--ink)}
+.ctl-agulha::before{content:"";position:absolute;left:-1px;top:7px;height:calc(50% - 8px);width:2px;border-radius:1px;
+  background:linear-gradient(180deg,currentColor 0,currentColor 74%,transparent 100%);
+  box-shadow:0 0 10px rgba(255,255,255,.45);transition:box-shadow .2s}
+.ctl-agulha::after{content:"";position:absolute;left:-5px;top:0;width:0;height:0;
+  border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid currentColor}
+:root[data-theme="light"] .ctl-agulha::before{box-shadow:0 0 10px rgba(0,0,0,.28)}
+
+.ctl.fita.arrastando .ctl-trilho{border-color:var(--edge-2)}
+.ctl.fita.arrastando .ctl-agulha::before{box-shadow:0 0 16px rgba(255,255,255,.75)}
+:root[data-theme="light"] .ctl.fita.arrastando .ctl-agulha::before{box-shadow:0 0 16px rgba(0,0,0,.4)}
+
+/* ainda sem valor: régua apagada e número em traço */
+.ctl.fita.vazia .ctl-trilho canvas{opacity:.35}
+.ctl.fita.vazia .ctl-agulha{opacity:.5}
+.ctl.fita.vazia .ctl-num{color:var(--mute-2)}
+.ctl.fita.vazia .ctl-num .u{color:var(--mute-2)}
+
+/* versão compacta: rótulo à esquerda, número à direita, na mesma linha */
+.ctl.fita.compacta{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:10px;row-gap:8px}
+.ctl.fita.compacta .ctl-rot{grid-area:1/1}
+.ctl.fita.compacta .ctl-leitura{grid-area:1/2;justify-content:flex-end}
+.ctl.fita.compacta .ctl-linha{grid-area:2/1/auto/-1}
+.ctl.fita.compacta .ctl-num{font-size:1.6rem;padding:9px 2px}
+.ctl.fita.compacta .ctl-num .u{font-size:.76rem}
+.ctl.fita.compacta .ctl-trilho{height:44px}
+
+/* ---------- traçado ---------- */
+.ctl.tracado{display:block;border-radius:var(--r-sm);overflow:hidden;
+  background:linear-gradient(180deg,rgba(0,0,0,.30),rgba(0,0,0,.14));border:1px solid rgba(255,255,255,.07)}
+:root[data-theme="light"] .ctl.tracado{background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.4));border-color:var(--edge-2)}
+.ctl.tracado canvas{display:block;width:100%}
+
+/* ---------- contador ---------- */
+.ctl-conta{font-family:var(--mono);font-size:.78rem;letter-spacing:.02em;color:var(--mute);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ctl-toque{appearance:none;flex:1;min-width:0;min-height:64px;border-radius:var(--r-sm);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:1rem;font-weight:500;letter-spacing:-.01em;color:var(--ink);cursor:pointer;
+  background:linear-gradient(140deg,var(--glass-3),var(--glass));border:1px solid var(--edge-2);
+  box-shadow:inset 0 1px 0 var(--hi),inset 0 -1px 0 rgba(0,0,0,.3);
+  transition:transform .2s var(--spring),background .2s}
+.ctl-toque small{font-size:.68rem;font-weight:400;letter-spacing:0;color:var(--mute)}
+.ctl-toque:active{transform:scale(.97)}
+.ctl-toque.pulsa{animation:ctl-pulso .32s var(--spring)}
+@keyframes ctl-pulso{0%{transform:scale(.95)}55%{transform:scale(1.025)}100%{transform:none}}
+.ctl.contador .ctl-passo{min-height:64px}
+.ctl-usar{align-self:flex-start}
+.ctl-usar[disabled]{opacity:.32;cursor:not-allowed}
