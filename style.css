@@ -231,8 +231,10 @@ p{margin:0}
 .rgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .rcard{appearance:none;text-align:left;cursor:pointer;min-height:150px;justify-content:space-between;transition:transform .2s var(--spring)}
 .rcard:active{transform:scale(.96)}
-.rcard .top-l{display:flex;justify-content:space-between;align-items:flex-start;gap:6px}
-.rcard strong{font-weight:500;font-size:.95rem;line-height:1.25;display:block;letter-spacing:-.01em}
+/* etiqueta numa linha própria, acima do título: lado a lado, uma palavra longa ("idioventricular") empurrava a etiqueta para fora do cartão */
+.rcard .top-l{display:flex;flex-direction:column-reverse;align-items:flex-start;gap:8px;min-width:0}
+.rcard .top-l>div{min-width:0;max-width:100%}
+.rcard strong{font-weight:500;font-size:.95rem;line-height:1.25;display:block;letter-spacing:-.01em;overflow-wrap:anywhere;hyphens:auto}
 .rcard .meta{font-size:.74rem;color:rgba(255,255,255,.66);margin-top:3px}
 .rcard svg.spark{width:100%;height:36px;display:block}
 .rcard svg.spark path{stroke-dasharray:600;stroke-dashoffset:600;animation:ecgdash 1.6s .3s var(--ease) forwards}

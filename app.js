@@ -964,7 +964,7 @@ function config(){
     <div class="card"><h3>Dados</h3><p class="small mute">${n} leitura${n === 1 ? "" : "s"} guardada${n === 1 ? "" : "s"} neste aparelho. Nada é enviado a servidor.</p>
       <button class="btn danger" type="button" data-apagar-tudo="1" ${n ? "" : "disabled"}>${I.lixo}Apagar todas as leituras</button>
       ${S.confirmaApagar ? `${ins("bad", "Tem certeza?", `Isso apaga as ${n} leituras e as fotos. Não dá para desfazer.`)}<div class="row2"><button class="btn" type="button" data-cancela-apagar="1">Cancelar</button><button class="btn danger" type="button" data-confirma-apagar="1">Apagar tudo</button></div>` : ""}</div>
-    <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 6.1 · roteiro clínico do Dr. Vitor Coutinho (19/09)</p>
+    <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 6.2 · roteiro clínico do Dr. Vitor Coutinho (19/09)</p>
   </div></div>`;
 }
 function assinatura(){
