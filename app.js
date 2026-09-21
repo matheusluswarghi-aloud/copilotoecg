@@ -636,6 +636,9 @@ function ins(k, t, d){ return `<div class="ins ${k}${k === "ok" && !d ? " mini" 
 function campo(k, rotulo, unidade){ return `<div class="field"><label for="n-${k}">${rotulo}</label><div class="linha"><input type="number" id="n-${k}" inputmode="decimal" step="0.5" min="0" value="${R()[k] ?? ""}" data-num="${k}"><span class="u">${unidade}</span></div></div>`; }
 const terrHTML = () => `<div class="terr">${TERR.map(([, b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div>`;
 function pendente(o){ return `<div class="pendente"><span class="tag">a enviar</span> ${o}</div>`; }
+/* "↓ continua" mora no rodapé, em fluxo: linha própria acima do botão, nunca por cima do conteúdo.
+   O botão ocupa a linha inteira (44 px de alvo de toque); o desenho da pílula fica centrado dentro. */
+function pilula(){ return `<button class="continua" id="continua" type="button" hidden><span>${I.baixo}continua</span></button>`; }
 function ajuda(chave, rotulo){ return `<button class="help" type="button" data-toggle="${chave}" aria-expanded="${!!S.aberto[chave]}">${I.maisPeq}${rotulo}</button>`; }
 function qrsFig(tipo){
   const base = tipo === "qs" || tipo === "rs" ? 40 : 60;
@@ -935,8 +938,7 @@ function telaMotivo(){
     <div class="tiles">${MOTIVOS.map((x, i) => `<button type="button" class="tile" data-motivo="${x.k}" aria-pressed="${S.cur.motivo === x.k}"><span class="ix">${dois(i + 1)}</span><strong>${x.nome}</strong></button>`).join("")}</div>
     ${m ? `<div class="orient" id="orient"><span class="eyebrow">Antes de olhar o traçado</span>${m.texto.map(t => `<p>${t}</p>`).join("")}</div>` : `<p class="tiny mute">A depender do motivo, o Copiloto mostra o que não pode passar naquele contexto.</p>`}
   </div>
-  <button class="continua" id="continua" type="button" hidden>${I.baixo}continua</button>
-  <div class="foot"><button class="btn primary" type="button" data-ir="foto" ${m ? "" : "disabled"}>Iniciar leitura ${I.seta}</button></div></div>`;
+  <div class="foot">${pilula()}<button class="btn primary" type="button" data-ir="foto" ${m ? "" : "disabled"}>Iniciar leitura ${I.seta}</button></div></div>`;
 }
 
 /* ---------- foto (opcional) ---------- */
@@ -1309,8 +1311,7 @@ function telaSeq(){
   ${topo(i, PASSOS[i], `${S.cur.tela ? `<button class="icobtn" type="button" data-ver="1" aria-label="Ver o eletro">${I.olho}</button>` : ""}<button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Sair">${I.fechar}</button>`)}
   ${progresso(i)}
   <div class="scroll seq stagger" id="seq-scroll"></div>
-  <button class="continua" id="continua" type="button" hidden>${I.baixo}continua</button>
-  <div class="foot"><button class="btn primary" type="button" id="proxima" disabled>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
+  <div class="foot">${pilula()}<button class="btn primary" type="button" id="proxima" disabled>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
 }
 function desenharMiolo(){
   const sc = document.getElementById("seq-scroll"), v = ETAPAS[S.cur.passo](), rb = renderBlocos(v.blocos), completa = v.ok() && !rb.temAtiva;
@@ -1321,7 +1322,8 @@ function desenharMiolo(){
   if (typeof montarControles === "function") montarControles(sc);
   const b = document.getElementById("proxima"), estava = !b.disabled;
   b.disabled = !completa; b.classList.toggle("pronta", completa && !estava);
-  focar(); atualizarContinua(); setTimeout(atualizarContinua, 400);
+  // a pílula ocupa uma linha do rodapé: decide antes, senão o focar() mede uma área que vai encolher
+  atualizarContinua(); focar(); setTimeout(atualizarContinua, 400);
 }
 /* rola sozinho até a pergunta em foco: ela não pode nascer cortada lá embaixo */
 function focar(){
@@ -1471,8 +1473,7 @@ function telaLaudo(){
     ${pendente("Link do grupo Plantão Descomplicado (nome e destino a definir com o Dr. Vitor). Por ora, o botão copia a interpretação.")}
     <p class="tiny mute" style="text-align:center">Quem leu foi você. O Copiloto garantiu que nenhuma etapa ficou para trás e fez as contas.</p>
   </div>
-  <button class="continua" id="continua" type="button" hidden>${I.baixo}continua</button>
-  <div class="foot"><button class="btn primary" type="button" data-ir="motivo">Iniciar novo ECG ${I.seta}</button></div></div>`;
+  <div class="foot">${pilula()}<button class="btn primary" type="button" data-ir="motivo">Iniciar novo ECG ${I.seta}</button></div></div>`;
 }
 
 /* ---------- desenhar e ligar ---------- */

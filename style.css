@@ -69,7 +69,7 @@ input::placeholder{color:var(--mute-2)}
 :root[data-theme="light"] .card::before,:root[data-theme="light"] .tile::before{background:linear-gradient(115deg,rgba(255,255,255,.9) 0%,rgba(255,255,255,.2) 40%,transparent 60%)}
 
 /* ---------- telas e movimento ---------- */
-.screen{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;animation:rise .42s var(--ease) both}
+.screen{flex:1;min-height:0;display:flex;flex-direction:column;animation:rise .42s var(--ease) both}
 .screen.fwd{animation:slideIn .42s var(--ease) both}
 .screen.back{animation:slideBack .42s var(--ease) both}
 .stagger>*{animation:rise .6s var(--ease) both;animation-delay:calc(var(--i,0)*50ms)}
@@ -101,13 +101,17 @@ input::placeholder{color:var(--mute-2)}
 .scroll>*{flex:none}
 .scroll.com-nav{padding-bottom:110px}
 /* base da área esmaece em vez de cortar o cartão seco; o padding maior para o último cartão acima da faixa */
-.scroll.seq{padding-bottom:56px;-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 44px),transparent)}
-.foot{padding:10px 18px max(12px,env(safe-area-inset-bottom));display:flex;gap:8px;flex:none;background:linear-gradient(to top,var(--bg) 60%,transparent)}
-/* pílula "↓ continua": avisa que ainda tem conteúdo abaixo e rola uma página ao toque */
-.continua{appearance:none;position:absolute;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:4;display:inline-flex;align-items:center;gap:6px;padding:8px 14px 8px 11px;border-radius:var(--r-pill);border:1px solid var(--edge-2);background:rgba(20,20,24,.82);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);color:var(--ink);font-size:.8rem;font-weight:500;cursor:pointer;box-shadow:0 12px 30px -14px rgba(0,0,0,.9);animation:rise .3s var(--ease) both}
+.scroll.seq{padding-bottom:52px;-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 30px),transparent)}
+.foot{padding:10px 18px max(12px,env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:8px;flex:none;background:linear-gradient(to top,var(--bg) 60%,transparent)}
+/* pílula "↓ continua": linha própria do rodapé (order -1 + linha inteira), acima do botão e fora da
+   área de rolagem — avisa que ainda tem conteúdo abaixo e rola uma página ao toque.
+   O botão ocupa a linha toda para dar 44 px de alvo de toque; o desenho da pílula fica centrado dentro. */
+.continua{appearance:none;order:-1;flex-basis:100%;min-height:44px;display:flex;align-items:center;justify-content:center;padding:0;border:0;background:transparent;color:var(--ink);cursor:pointer}
 .continua[hidden]{display:none}
+.continua>span{display:inline-flex;align-items:center;gap:6px;padding:7px 14px 7px 11px;border-radius:var(--r-pill);border:1px solid var(--edge-2);background:rgba(20,20,24,.82);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);font-size:.8rem;font-weight:500;box-shadow:0 12px 30px -14px rgba(0,0,0,.9);animation:rise .3s var(--ease) both;transition:transform .18s var(--spring)}
+.continua:active>span{transform:scale(.96)}
 .continua svg{width:14px;height:14px;animation:quica 1.6s var(--ease) infinite}
-:root[data-theme="light"] .continua{background:rgba(255,255,255,.9)}
+:root[data-theme="light"] .continua>span{background:rgba(255,255,255,.9)}
 @keyframes quica{0%,100%{transform:translateY(-1px)}50%{transform:translateY(3px)}}
 .btn.primary.pronta{animation:pronta .9s var(--ease) 1}
 @keyframes pronta{0%{box-shadow:0 0 0 0 rgba(255,255,255,.55)}100%{box-shadow:0 0 0 18px rgba(255,255,255,0)}}
