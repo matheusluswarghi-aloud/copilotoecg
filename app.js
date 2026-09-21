@@ -46,7 +46,7 @@ function nova(){
 }
 const S = {
   tela:"inicio", aba:"inicio", cur:nova(), leituras:lerJSON(CHAVE, []), editando:null,
-  prefs:Object.assign({nome:"", assinatura:true, tema:"escuro"}, lerJSON(CHAVE_PREFS, {})),
+  prefs:Object.assign({nome:"", assinatura:true, tema:"escuro", revisao:false}, lerJSON(CHAVE_PREFS, {})),
   visor:null, vista:null, detalhe:null, aberto:{}, medir:null, calc:{},
   dock:"aberto", fotoOrigem:null, verVolta:"seq",
   filtro:{busca:"", motivo:"todas", atencao:false}, guiaAba:"calc", guiaFoco:null
@@ -688,7 +688,10 @@ function opt(chave, valor, rotulo, multi){
 }
 function ins(k, t, d, id){ return `<div class="ins ${k}${k === "ok" && !d ? " mini" : ""}"${id ? ` id="${id}"` : ""}><strong>${t}</strong>${d ? `<p>${d}</p>` : ""}</div>`; }
 const terrHTML = () => `<div class="terr">${TERR.map(([, b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div>`;
-function pendente(o){ return `<div class="pendente"><span class="tag">a enviar</span> ${o}</div>`; }
+const revisao = () => !!S.prefs.revisao;
+function pendente(o){ return revisao() ? `<div class="pendente"><span class="tag">a enviar</span> ${o}</div>` : ""; }
+// link de ajuda cujo único conteúdo seria a imagem pendente: existe apenas em modo revisão
+function ajudaRev(chave, rotulo, conteudo){ return revisao() ? ajuda(chave, rotulo) + (S.aberto[chave] ? `<div class="helpbox">${conteudo}</div>` : "") : ""; }
 /* "↓ continua" mora no rodapé, em fluxo: linha própria acima do botão, nunca por cima do conteúdo.
    O botão ocupa a linha inteira (44 px de alvo de toque); o desenho da pílula fica centrado dentro. */
 function pilula(){ return `<button class="continua" id="continua" type="button" hidden><span>${I.baixo}continua</span></button>`; }
@@ -947,6 +950,7 @@ function config(){
     <div class="card">
       <div class="toggle"><div class="l"><strong>Assinar o laudo</strong><span>Acrescenta seu nome e a data ao copiar</span></div><button class="switch" type="button" role="switch" aria-checked="${!!p.assinatura}" data-pref="assinatura"></button></div>
       <div class="toggle"><div class="l"><strong>Tema claro</strong><span>Para ambientes muito iluminados</span></div><button class="switch" type="button" role="switch" aria-checked="${p.tema === "claro"}" data-pref="tema"></button></div>
+      <div class="toggle"><div class="l"><strong>Modo revisão</strong><span>Mostra os lembretes das imagens que o Dr. Vitor ainda vai enviar</span></div><button class="switch" type="button" role="switch" aria-checked="${!!p.revisao}" data-pref="revisao"></button></div>
     </div>
     <div class="card"><h3>Dados</h3><p class="small mute">${n} leitura${n === 1 ? "" : "s"} guardada${n === 1 ? "" : "s"} neste aparelho. Nada é enviado a servidor.</p>
       <button class="btn danger" type="button" data-apagar-tudo="1" ${n ? "" : "disabled"}>${I.lixo}Apagar todas as leituras</button>
@@ -1140,7 +1144,7 @@ const ETAPAS = {
     B.texto(`<p class="small mute">Vamos confirmar rapidamente se o traçado é adequado para interpretação.</p>`);
     B.escolha("cal", {sec:"2.1 — Calibração", curto:"Calibração", antes:`<p class="small ink2">Confira a calibração impressa no ECG.</p>`,
       titulo:"O ECG está em 25 mm/s e 10 mm/mV?", opcoes:[["padrao","Sim — 25 mm/s e 10 mm/mV","25 mm/s · 10 mm/mV"],["outra","Outra / não sei"]],
-      depois:ajuda("ondecal", "Onde encontro isso?") + (S.aberto.ondecal ? `<div class="helpbox">${pendente("Foto padrão de um ECG mostrando onde ficam a velocidade e a amplitude impressas")}</div>` : "")});
+      depois:ajudaRev("ondecal", "Onde encontro isso?", pendente("Foto padrão de um ECG mostrando onde ficam a velocidade e a amplitude impressas"))});
     if (r.cal === "padrao") B.res("ok", "Calibração padrão", "");
     if (r.cal === "outra"){
       B.res("warn", "Atenção à calibração", "Este ECG não foi confirmado em 25 mm/s e 10 mm/mV. Isso modifica a relação entre os quadrados do papel e o tempo. Sugiro repetir o ECG.");
@@ -1212,7 +1216,7 @@ const ETAPAS = {
     const r = R(), e = eixo(), B = Blocos();
     const ajudaPol = ajuda("polqrs", "Me ajude a saber se o QRS é positivo ou negativo") + (S.aberto.polqrs ? `<div class="helpbox"><p>Observe o QRS em relação à linha de base.</p><p><b>Predominantemente positivo</b> → a maior parte do QRS está acima da linha de base.</p><p><b>Predominantemente negativo</b> → a maior parte do QRS está abaixo da linha de base.</p>
         <div class="figs"><figure>${qrsFig("ralto")}<figcaption>R alto</figcaption></figure><figure>${qrsFig("qr")}<figcaption>qR</figcaption></figure><figure>${qrsFig("qs")}<figcaption>QS</figcaption></figure><figure>${qrsFig("rs")}<figcaption>rS</figcaption></figure></div>
-        <p class="tiny mute">Os dois primeiros são positivos; os dois últimos, negativos. Desenho esquemático, a validar pelo Dr. Vitor.</p></div>` : "");
+        <p class="tiny mute">Os dois primeiros são positivos; os dois últimos, negativos.${revisao() ? " Desenho esquemático, a validar pelo Dr. Vitor." : ""}</p></div>` : "");
     B.escolha("di", {sec:"5.1 — Como é o QRS em DI?", curto:"QRS em DI", opcoes:POL, depois:ajudaPol});
     B.escolha("avf", {sec:"5.2 — Como é o QRS em aVF?", curto:"QRS em aVF", opcoes:POL, depois:ajudaPol});
     if (r.di === "pos" && r.avf === "neg") B.escolha("dii", {sec:"Agora observe DII", curto:"QRS em DII", titulo:"Como é o QRS em DII?", opcoes:POL, depois:ajudaPol});
@@ -1231,7 +1235,7 @@ const ETAPAS = {
       antes:`<div class="sec"><h3>Antes de procurar alterações, pense em territórios</h3></div><p class="small ink2">Não analise uma derivação isoladamente. Procure alterações em derivações anatomicamente contíguas.</p>${terrHTML()}`,
       titulo:"Você identifica alguma destas alterações em pelo menos duas derivações contíguas?",
       opcoes:[["supra","Supradesnivelamento do segmento ST","Supra de ST"],["infra","Infradesnivelamento do segmento ST","Infra de ST"],["tinv","Inversão simétrica da onda T","T invertida simétrica"],["nenhuma","Nenhuma dessas alterações","Nenhuma"]],
-      depois:ajuda("critsupra", "Me ajude a revisar os critérios de supra") + (S.aberto.critsupra ? `<div class="helpbox">${pendente("Critérios de supra de ST por derivação, sexo e idade")}</div>` : "")});
+      depois:ajudaRev("critsupra", "Me ajude a revisar os critérios de supra", pendente("Critérios de supra de ST por derivação, sexo e idade"))});
     if (m.includes("supra")){
       B.escolha("supraDist", {curto:"Distribuição do supra", titulo:"O supradesnivelamento de ST apresenta distribuição em derivações anatomicamente contíguas compatível com um território coronariano?",
         opcoes:[["sim","Sim","Territorial"],["difuso","Não — o supra parece difuso","Difuso"],["naosei","Não sei"]], pendentes:["naosei"],
@@ -1249,7 +1253,7 @@ const ETAPAS = {
     if (m.includes("nenhuma")){
       B.multi("padroes", {sec:"Antes de seguir, procure padrões de alto risco", curto:"Padrões de alto risco", antes:`<p class="small ink2">Faça uma última checagem:</p>`,
         opcoes:PADROES.map(([k, l]) => [k, l]).concat([["nenhum","Nenhum desses padrões","Nenhum"]]),
-        depois:ajuda("padraoajuda", "Não sei identificar") + (S.aberto.padraoajuda ? `<div class="helpbox">${PADROES.map(([, l]) => pendente(l + ": imagem validada e 2 ou 3 características")).join("")}</div>` : "")});
+        depois:ajudaRev("padraoajuda", "Não sei identificar", PADROES.map(([, l]) => pendente(l + ": imagem validada e 2 ou 3 características")).join(""))});
       const p = r.padroes || [];
       if (p.includes("nenhum")) B.res("ok", "Nenhum padrão isquêmico evidente identificado nesta etapa", "");
       else if (p.length) B.res("bad", "Padrão de alto risco marcado", p.map(x => PADROES.find(y => y[0] === x)[1]).join(" · "));
@@ -1336,7 +1340,9 @@ const ETAPAS = {
   10: () => {
     const r = R(), m = r.esp || [], q = qt(), B = Blocos();
     const TRI = [["sim","Sim"],["nao","Não"],["naosei","Não sei identificar"]];
-    const foto = (k, legenda) => r[k] === "naosei" ? `<div class="helpbox">${pendente(legenda)}<p class="tiny mute">Depois de comparar, responda sim ou não.</p></div>` : "";
+    const foto = (k, legenda) => r[k] !== "naosei" ? "" : revisao()
+      ? `<div class="helpbox">${pendente(legenda)}<p class="tiny mute">Depois de comparar, responda sim ou não.</p></div>`
+      : `<div class="helpbox"><p>A imagem de referência desta alteração está em preparação. Compare com o seu material do curso e responda sim ou não.</p></div>`;
     B.multi("esp", {curto:"Suspeita clínica", antes:`<p class="small mute">Antes de terminar:</p>`, titulo:"Existe suspeita clínica de alguma destas condições?",
       opcoes:ESPECIAIS.map(([k, l]) => [k, l]).concat([["nenhuma","Nenhuma dessas","Nenhuma"]])});
     if (m.includes("tep")){
