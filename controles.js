@@ -522,11 +522,13 @@ function pegador(ctx, x, cy, cor){
   ctx.restore();
 }
 
-// papel arrastável: o dedo leva o marcador, sem inércia; setas andam meio quadradinho
+// papel arrastável: o dedo leva o marcador, sem inércia; setas andam meio quadradinho.
+// `aceita(x)` recusa o começo do toque fora da área útil; arrasto que já começou segue valendo.
 function ligarPapel(el, h){
   let puxando = false;
   const desligar = arrasto(el, {
     inicio(p){
+      if (h.aceita && !h.aceita(p.x)) return;
       el.classList.add("sem-anel"); try { el.focus({preventScroll:true}); } catch(_){}
       puxando = true; el.classList.add("puxando"); h.levar(h.de(p.x));
     },
@@ -753,7 +755,8 @@ function reguaQT(host, o){
   const soltar = () => { if (o.aoSoltar) o.aoSoltar(val); };
   const andar = d => { levar(val == null ? FANTASMA : val + d * .5); soltar(); };
 
-  const desligar = ligarPapel(pap, {de: x => x / (t.larg / QS) - X0Q, levar, soltar, andar});
+  // só pega à direita do início do QRS: toque sobre a P ou o QRS não mexe no fim da T
+  const desligar = ligarPapel(pap, {de: x => x / (t.larg / QS) - X0Q, aceita: x => x >= X0Q * (t.larg / QS), levar, soltar, andar});
   const paraMenos = botaoRepetir(raiz.querySelector('.ctl-passo[data-d="-1"]'), () => andar(-1));
   const paraMais = botaoRepetir(raiz.querySelector('.ctl-passo[data-d="1"]'), () => andar(1));
   numeroTocavel(elNum, {ler: () => val, gravar: n => api.definir(n), min: MIN, max: MAX, passo: .5});
