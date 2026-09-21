@@ -160,6 +160,9 @@ p{margin:0}
 .grad .mute,.grad .ink2{color:rgba(255,255,255,.72)}
 .grad .eyebrow{color:rgba(255,255,255,.62)}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* retomar a leitura interrompida: primeira coisa depois da saudação */
+.cont strong{font-weight:500;font-size:1.08rem;letter-spacing:-.01em}
+.cont .btn.primary{flex:none}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{appearance:none;color:var(--ink-2);border-radius:var(--r-pill);padding:7px 12px;font-size:.82rem;cursor:pointer;white-space:nowrap;transition:background .2s,color .2s,transform .18s var(--spring);font-variant-numeric:tabular-nums}
 .chip:active{transform:scale(.95)}

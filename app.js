@@ -30,6 +30,10 @@ async function guardarFoto(id, blob){
 async function apagarFoto(id){
   try { const b = await db(); await new Promise(ok => { const t = b.transaction(LOJA, "readwrite"); t.objectStore(LOJA).delete(id); t.oncomplete = ok; t.onerror = ok; }); } catch(_){}
 }
+async function lerFoto(id){
+  try { const b = await db(); return await new Promise(ok => { const q = b.transaction(LOJA).objectStore(LOJA).get(id); q.onsuccess = () => ok(q.result); q.onerror = () => ok(undefined); }); }
+  catch(_){ return undefined; }
+}
 const lerJSON = (k, padrao) => { try { return JSON.parse(localStorage.getItem(k)) || padrao; } catch(_){ return padrao; } };
 const gravarJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(_){} };
 
@@ -49,6 +53,46 @@ const S = {
 };
 function aplicarTema(){ document.documentElement.setAttribute("data-theme", S.prefs.tema === "claro" ? "light" : "dark"); }
 aplicarTema();
+
+/* ---------- leitura em andamento: o plantão interrompe, o celular mata a aba ----------
+   O que dá para serializar vai no localStorage; a foto (blob) vai para o IndexedDB na chave "andamento".
+   O canvas e a miniatura são refeitos a partir do blob, não guardados. */
+const CHAVE_AND = "copiloto.andamento", FOTO_AND = "andamento", VALIDADE_AND = 48 * 36e5;
+function gravarAndamento(){
+  const c = S.cur; if (!c.motivo) return;
+  gravarJSON(CHAVE_AND, {id:c.id, quando:c.quando, motivo:c.motivo, passo:c.passo, r:c.r, conf:c.conf, escala:c.escala, calQuadrados:c.calQuadrados, pontos:c.pontos, foto:c.foto, temFoto:!!c.tela, dock:S.dock, salvoEm:Date.now()});
+}
+function lerAndamento(){
+  const a = lerJSON(CHAVE_AND, null); if (!a) return null;
+  if (!a.motivo || Date.now() - (a.salvoEm || 0) > VALIDADE_AND){ descartarAndamento(); return null; }
+  return a;
+}
+function descartarAndamento(){ try { localStorage.removeItem(CHAVE_AND); } catch(_){} apagarFoto(FOTO_AND); }
+async function continuarLeitura(){
+  const a = lerAndamento(); if (!a) return;
+  if (!(S.cur.id === a.id && S.cur.motivo)){                 // ainda na memória: é só voltar para a etapa
+    const c = nova();
+    Object.assign(c, {id:a.id, quando:a.quando, motivo:a.motivo, passo:a.passo, r:a.r || {}, conf:a.conf || {}, escala:a.escala || null, calQuadrados:a.calQuadrados || 5, pontos:a.pontos || c.pontos, foto:a.foto || null});
+    if (a.temFoto){
+      const blob = await lerFoto(FOTO_AND) || await lerFoto(a.id);
+      if (blob){ try { c.tela = await prepararFoto(blob); c.blob = blob; if (!c.foto) c.foto = analisarQualidade(c.tela); } catch(_){} }
+      if (!c.tela){ c.escala = null; c.foto = null; }     // sem a foto, a calibração da régua não vale
+    }
+    S.cur = c; S.dock = a.dock || "aberto"; S.vista = null; S.aberto = {};
+  }
+  S.editando = null; S.tela = "seq"; desenhar(true);
+}
+/* a tela não pode apagar no meio da leitura; fora dela, o aparelho volta ao normal */
+let trava = null;
+const emLeitura = () => ["motivo", "foto", "seq", "medir", "ver", "laudo"].includes(S.tela);
+async function travarTela(ligar){
+  try {
+    if (ligar && !trava && navigator.wakeLock){ trava = await navigator.wakeLock.request("screen"); trava.addEventListener("release", () => { trava = null; }); }
+    else if (!ligar && trava){ const x = trava; trava = null; await x.release(); }
+  } catch(_){ trava = null; }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && emLeitura()) travarTela(true); });
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); S.instalar = e; });
 
 /* ---------- o conteúdo do Dr. Vitor ---------- */
 const MOTIVOS = [
@@ -746,11 +790,16 @@ function inicio(){
   const ult = S.leituras.slice(0, 2), n = S.leituras.length, at = S.leituras.filter(l => l.alerta).length;
   const top = contagemMotivos()[0];
   const nomeTop = top ? (MOTIVOS.find(m => m.k === top[0]) || {curto:"—"}).curto : "—";
+  const and = lerAndamento(), mAnd = and && MOTIVOS.find(m => m.k === and.motivo);
+  const haQuanto = ms => { const min = Math.max(1, Math.round((Date.now() - ms) / 6e4)); return min < 60 ? `há ${min} min` : `há ${Math.round(min / 60)} h`; };
   return `<div class="screen">
   <div class="top"><div class="brand">${marca()}<strong>Copiloto</strong></div><div class="t"></div>
     <button class="icobtn" type="button" data-aba="config" aria-label="Configurações">${I.config}</button></div>
   <div class="scroll stagger com-nav">
     <div><h1>${saudacao()}</h1><p class="mute" style="margin-top:4px">Vamos interpretar um ECG?</p></div>
+    ${and ? `<div class="card grad glow cont"><span class="eyebrow">Leitura em andamento</span><strong>${mAnd ? mAnd.nome : "Leitura"}</strong>
+      <p class="tiny">Etapa ${and.passo} de ${ULTIMO} · ${PASSOS[and.passo]} · ${haQuanto(and.salvoEm)}</p>
+      <div class="row2"><button class="btn" type="button" data-descartar="1">Descartar</button><button class="btn primary" type="button" data-continuar="1">Continuar</button></div></div>` : ""}
     ${monitorHTML()}
     <div class="stats">
       <div class="stat"><span class="n" data-count="${n}">0</span><span class="l">leitura${n === 1 ? "" : "s"}</span></div>
@@ -864,11 +913,16 @@ function guia(){
       <div data-ctl="g-fc"></div>
       <p class="tiny mute">Prolongado: > 450 ms no masculino, ≥ 460 ms no feminino. Curto: < 350 ms.</p></div>`;
   } else if (aba === "uso"){
-    corpo = `<div class="card"><h3>A sequência</h3><p class="small ink2">Motivo do exame → técnica → ritmo → regularidade e frequência → eixo → descarte de arritmias → descarte de isquemia → QRS → intervalo QT → padrões especiais → volte ao paciente. O Copiloto guarda cada resposta e usa nas etapas seguintes, sem perguntar de novo: a largura do QRS, o eixo, a FC e o QTc são reaproveitados.</p></div>
+    corpo = `<div class="card"><h3>Instalar na tela inicial</h3>
+      <p class="small ink2">No iPhone: abra no Safari, toque em Compartilhar e em Adicionar à Tela de Início.</p>
+      <p class="small ink2">No Android: no Chrome, toque no menu ⋮ e em Instalar app.</p>
+      <p class="small ink2">Instalado, o Copiloto abre em tela cheia e funciona sem internet.</p>
+      ${S.instalar ? `<button class="btn wide" type="button" data-instalar="1">Instalar agora</button>` : ""}</div>
+      <div class="card"><h3>A sequência</h3><p class="small ink2">Motivo do exame → técnica → ritmo → regularidade e frequência → eixo → descarte de arritmias → descarte de isquemia → QRS → intervalo QT → padrões especiais → volte ao paciente. O Copiloto guarda cada resposta e usa nas etapas seguintes, sem perguntar de novo: a largura do QRS, o eixo, a FC e o QTc são reaproveitados.</p></div>
       <div class="card"><h3>A foto é opcional</h3><p class="small ink2">Você pode ler direto no papel. Com a foto, o eletro fica no topo de todas as etapas — dá para dar zoom, recolher e abrir em tela cheia — e dá para medir com a régua na tela. <b>Câmera</b> fotografa na hora; <b>Galeria</b> usa uma foto já tirada.</p></div>
       <div class="card"><h3>A régua na foto</h3><p class="small ink2">Antes de medir, arraste as duas bolinhas sobre cinco quadradões (1 segundo de papel). O app aprende a escala daquela foto e passa a medir em milissegundos.</p></div>
       <div class="card"><h3>O laudo</h3><p class="small ink2">O texto final é montado com as suas respostas e pode sair assinado com o seu nome (Configurações). Confira antes de copiar.</p></div>
-      <div class="card"><h3>Privacidade</h3><p class="small ink2">A foto e as respostas ficam neste aparelho. O app não envia nada para servidor nenhum.</p></div>`;
+      <div class="card"><h3>Privacidade</h3><p class="small ink2">A foto e as respostas ficam neste aparelho. O app não envia nada para servidor nenhum.</p><p class="small ink2">A leitura em andamento também fica só aqui, para você continuar se for interrompido.</p></div>`;
   } else {
     const g = [["Ritmo sinusal","P positiva em DI, DII e aVF, negativa em aVR, precedendo cada QRS com a mesma morfologia."],["Regular / irregular","Compare os intervalos R-R ao longo do traçado."],["QRS largo","120 ms ou mais: três quadradinhos ou mais."],["Derivações contíguas","Inferior: DII, DIII, aVF · Lateral: DI, aVL, V5, V6 · Anterior/septal: V1 a V4."],["Calibração padrão","25 mm/s e 10 mm/mV, impressos no próprio ECG."],["Eixo por DI e aVF","Os dois positivos: normal. DI positivo e aVF negativo: DII desempata. DI negativo e aVF positivo: direita. Os dois negativos: extremo."],["Sgarbossa modificado","No BRE com suspeita de isquemia: supra ≥ 1 mm concordante, infra ≥ 1 mm em V1–V3 ou supra ÷ onda S ≥ 0,25 em V1–V3."],["Sokolow-Lyon","S em V1 + maior R em V5/V6 > 35 mm: critério de voltagem para aumento ventricular esquerdo."],["QTc (Bazett)","QT ÷ √RR. Prolongado: > 450 ms (M), ≥ 460 ms (F). Curto: < 350 ms."]];
     corpo = `<div class="card"><h3>Termos usados no app</h3><div class="gloss">${g.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div><p class="tiny mute">Definições como aparecem no roteiro do Dr. Vitor.</p></div>`;
@@ -1341,6 +1395,7 @@ function desenharMiolo(){
   b.disabled = !completa; b.classList.toggle("pronta", completa && !estava);
   // a pílula ocupa uma linha do rodapé: decide antes, senão o focar() mede uma área que vai encolher
   atualizarContinua(); focar(); setTimeout(atualizarContinua, 400);
+  gravarAndamento(); // o miolo trocado no lugar não passa pelo fim do desenhar()
 }
 /* rola sozinho até a pergunta em foco: ela não pode nascer cortada lá embaixo */
 function focar(){
@@ -1480,9 +1535,9 @@ function telaLaudo(){
     ${s.atencao.length ? ins("bad", s.atencao.length === 1 ? "1 ponto de atenção" : s.atencao.length + " pontos de atenção", s.atencao.join(" · ")) : ins("ok", "Nenhum ponto de atenção nas etapas avaliadas", "")}
     <div class="sec"><h3>11.1 — Sua interpretação do ECG</h3><span class="tiny mute">resumo do ECG</span></div>
     ${s.blocos.map((b, i) => `<div class="ins ${b.k}"><span class="ix">${dois(i + 1)} · ${b.t.toUpperCase()}</span><strong>${b.v}</strong>${b.d ? `<p>${b.d}</p>` : ""}</div>`).join("")}
-    <div class="sec"><h3>Interpretação estruturada</h3><span class="tiny mute">montada com as suas respostas</span></div>
+    <div class="sec"><h3>Interpretação estruturada</h3><span class="tag ok salva">Salva neste aparelho</span></div>
     <div class="laudo" id="laudo">${s.texto}${assinatura() ? `<div class="sig">${assinatura().trim()}</div>` : ""}</div>
-    <div class="row2"><button class="btn" type="button" data-copiar="1">${I.copiar}Copiar</button><button class="btn" type="button" id="salvar">${S.cur.salva ? I.check + "Salvo" : I.salvar + "Salvar"}</button></div>
+    <button class="btn wide" type="button" data-copiar="1">${I.copiar}Copiar</button>
     <div class="sec"><h3>Próximo passo clínico</h3><span class="tiny mute">orientação inicial</span></div>
     <button class="btn wide" type="button" data-toggle="proximo" aria-expanded="${!!S.aberto.proximo}">${S.aberto.proximo ? I.fechar + "Fechar" : I.seta + "A partir do que você identificou, lembre-se"}</button>
     ${S.aberto.proximo ? (pp.length ? pp.map(c => `<div class="card"><span class="eyebrow">${c.t}</span>${c.p.map(x => `<p class="small ink2">${x}</p>`).join("")}</div>`).join("")
@@ -1567,7 +1622,8 @@ function miniatura(){
     return c.toDataURL("image/jpeg", .6);
   } catch(_){ return null; }
 }
-function salvarLeitura(){
+/* silencioso: a etapa 11 salva sozinha, sem aviso e sem redesenhar (quem desenha é quem chamou) */
+function salvarLeitura(o){
   const s = resumo(), r = R();
   const reg = { id:S.cur.id, quando:S.cur.quando, motivo:S.cur.motivo, queixa:motivo() ? motivo().nome : "Leitura",
     conc:s.titulo, alerta:s.atencao.length > 0, laudo:s.texto, thumb:miniatura(),
@@ -1576,12 +1632,15 @@ function salvarLeitura(){
   gravarJSON(CHAVE, S.leituras);
   if (S.cur.blob) guardarFoto(S.cur.id, S.cur.blob);
   S.cur.salva = true;
+  descartarAndamento();
+  if (o && o.silencioso) return;
   aviso("Salvo neste aparelho");
   manterRolagem(desenhar);
 }
 function soltarVisor(){ if (S.visor){ S.visor.destruir(); S.visor = null; } }
 function irPara(t){
-  if (t === "motivo" && S.tela !== "foto" && S.tela !== "seq"){ S.cur = nova(); S.vista = null; S.aberto = {}; S.dock = "aberto"; S.fotoOrigem = null; }
+  // leitura nova enterra a anterior: o botão Continuar fica logo acima, e ler um eletro leva dois minutos
+  if (t === "motivo" && S.tela !== "foto" && S.tela !== "seq"){ descartarAndamento(); S.cur = nova(); S.vista = null; S.aberto = {}; S.dock = "aberto"; S.fotoOrigem = null; }
   if (t === "foto") S.fotoOrigem = null; // só se chega aqui pelo "Iniciar leitura": o voltar é para o motivo
   S.editando = null;
   soltarVisor();
@@ -1620,6 +1679,8 @@ function desenhar(inteira){
   if (S.tela === "seq") desenharMiolo(); // o miolo nasce vazio na casca
   escalonar();
   atualizarContinua(); setTimeout(atualizarContinua, 400);
+  if (["foto", "seq", "medir", "ver"].includes(S.tela)) gravarAndamento();
+  travarTela(emLeitura());
 }
 /* liga os eventos de uma raiz: a tela inteira (app) ou só o miolo redesenhado.
    Os getElementById ficam como estão — religar é só reatribuir onclick/oninput. */
@@ -1631,6 +1692,9 @@ function ligar(raiz){
     const o = document.getElementById("orient"); if (o) o.scrollIntoView({block:"nearest", behavior:"smooth"});
   });
   raiz.querySelectorAll("[data-fonte]").forEach(b => b.onclick = () => pedirFoto(b.dataset.fonte));
+  raiz.querySelectorAll("[data-continuar]").forEach(b => b.onclick = () => continuarLeitura());
+  raiz.querySelectorAll("[data-descartar]").forEach(b => b.onclick = () => { descartarAndamento(); S.cur = nova(); desenhar(true); });
+  raiz.querySelectorAll("[data-instalar]").forEach(b => b.onclick = () => { const e = S.instalar; if (!e) return; S.instalar = null; try { e.prompt(); } catch(_){} });
   raiz.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const k = b.dataset.toggle; S.aberto[k] = !S.aberto[k]; manterRolagem(desenhar); });
   raiz.querySelectorAll("[data-quad]").forEach(b => b.onclick = () => { S.cur.calQuadrados = +b.dataset.quad; desenhar(); });
   // abrir/recolher muda a altura da área de rolagem: a casca é remontada, mas a leitura fica onde estava
@@ -1699,12 +1763,8 @@ function ligar(raiz){
     if (b) b.onclick = () => {
       S.editando = null;
       if (S.cur.passo < ULTIMA_PERGUNTA){ S.cur.passo++; S.dir = "fwd"; desenhar(true); const sc = document.getElementById("seq-scroll"); if (sc) sc.scrollTop = 0; }
-      else { S.tela = "laudo"; desenhar(true); }
+      else { S.tela = "laudo"; salvarLeitura({silencioso:true}); desenhar(true); } // chegou ao fim: guarda sozinho
     };
-  }
-  if (S.tela === "laudo"){
-    const s = document.getElementById("salvar");
-    if (s) s.onclick = () => { if (!S.cur.salva) salvarLeitura(); };
   }
 }
 function ligarMedir(){
@@ -1779,7 +1839,7 @@ inputArquivo.addEventListener("change", async () => {
     S.cur.foto = analisarQualidade(tela);
     S.cur.escala = null; S.cur.pontos = {cal:null, fc:null, qrs:null, qt:null};
     S.cur.thumb = null; S.vista = null;
-    tela.toBlob(b => { S.cur.blob = b; }, "image/jpeg", .88);
+    tela.toBlob(b => { S.cur.blob = b; guardarFoto(FOTO_AND, b); }, "image/jpeg", .88);
     soltarVisor();
     S.tela = "foto";
     desenhar();
