@@ -116,7 +116,7 @@ function arritmia(B){
   const r = R(), fc = r.fc, reg = r.reg, sin = sinusal(), faixa = faixaFC();
   const fim = (res, extra) => ({pronto:true, res, extra});
   const falta = () => ({pronto:false});
-  const SN = [["nao","Não"],["sim","Sim"]];
+  const SN = [["nao","Não"],["sim","Sim"]]; // Não antes de Sim: é a ordem dos botões do roteiro nesta etapa, ao contrário de SIMNAO
   if (sin === null || !fc || !reg) return falta();
 
   if (sin){
@@ -612,6 +612,7 @@ const I = {
   config:svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   busca:svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>'),
   seta:svg('<path d="M9 6l6 6-6 6"/>'),
+  baixo:svg('<path d="M12 5v14M6 13l6 6 6-6"/>'),
   maisPeq:svg('<path d="M12 6v12M6 12h12"/>'),
   camera:svg('<rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="12" cy="13.5" r="3.4"/><path d="M8 7l1.4-2h5.2L16 7"/>'),
   galeria:svg('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>'),
@@ -929,11 +930,12 @@ function telaMotivo(){
   return `<div class="screen">
   <div class="top"><span class="ghostnum" aria-hidden="true">01</span><button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Voltar">${I.voltar}</button><span class="step-num">01</span><div class="t"><small>Etapa 1 de ${ULTIMO}</small><strong>Olhe para o paciente</strong></div></div>
   ${progresso(1)}
-  <div class="scroll stagger" id="seq-scroll">
+  <div class="scroll seq stagger" id="seq-scroll">
     <p class="q">O que motivou este ECG?</p>
     <div class="tiles">${MOTIVOS.map((x, i) => `<button type="button" class="tile" data-motivo="${x.k}" aria-pressed="${S.cur.motivo === x.k}"><span class="ix">${dois(i + 1)}</span><strong>${x.nome}</strong></button>`).join("")}</div>
     ${m ? `<div class="orient" id="orient"><span class="eyebrow">Antes de olhar o traçado</span>${m.texto.map(t => `<p>${t}</p>`).join("")}</div>` : `<p class="tiny mute">A depender do motivo, o Copiloto mostra o que não pode passar naquele contexto.</p>`}
   </div>
+  <button class="continua" id="continua" type="button" hidden>${I.baixo}continua</button>
   <div class="foot"><button class="btn primary" type="button" data-ir="foto" ${m ? "" : "disabled"}>Iniciar leitura ${I.seta}</button></div></div>`;
 }
 
@@ -1299,15 +1301,48 @@ const ETAPAS = {
   }
 };
 
+/* casca: topo, progresso e rodapé, montados uma vez por etapa. O miolo (#seq-scroll) nasce vazio
+   e é preenchido por desenharMiolo() — responder não pode destruir o que vive na casca. */
 function telaSeq(){
-  const i = S.cur.passo, v = ETAPAS[i](), rb = renderBlocos(v.blocos), completa = v.ok() && !rb.temAtiva;
-  const dir = S.dir || ""; S.dir = "";
-  return `<div class="screen ${dir}">
+  const i = S.cur.passo, dir = S.dir || ""; S.dir = "";
+  return `<div class="screen ${dir}" data-passo="${i}">
   ${topo(i, PASSOS[i], `${S.cur.tela ? `<button class="icobtn" type="button" data-ver="1" aria-label="Ver o eletro">${I.olho}</button>` : ""}<button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Sair">${I.fechar}</button>`)}
   ${progresso(i)}
-  <div class="scroll stagger" id="seq-scroll">${rb.html}</div>
-  <div class="foot"><button class="btn primary" type="button" id="proxima" ${completa ? "" : "disabled"}>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
+  <div class="scroll seq stagger" id="seq-scroll"></div>
+  <button class="continua" id="continua" type="button" hidden>${I.baixo}continua</button>
+  <div class="foot"><button class="btn primary" type="button" id="proxima" disabled>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
 }
+function desenharMiolo(){
+  const sc = document.getElementById("seq-scroll"), v = ETAPAS[S.cur.passo](), rb = renderBlocos(v.blocos), completa = v.ok() && !rb.temAtiva;
+  const topoR = sc.scrollTop;
+  sc.innerHTML = rb.html;
+  sc.scrollTop = topoR; // o miolo é trocado no lugar: devolve a rolagem antes de o focar() ajustar
+  ligar(sc);
+  if (typeof montarControles === "function") montarControles(sc);
+  const b = document.getElementById("proxima"), estava = !b.disabled;
+  b.disabled = !completa; b.classList.toggle("pronta", completa && !estava);
+  focar(); atualizarContinua(); setTimeout(atualizarContinua, 400);
+}
+/* rola sozinho até a pergunta em foco: ela não pode nascer cortada lá embaixo */
+function focar(){
+  const sc = document.getElementById("seq-scroll"); if (!sc) return;
+  const ativa = sc.querySelector(".qb.ativa"), alvo = ativa || sc.lastElementChild; if (!alvo) return;
+  const a = alvo.getBoundingClientRect(), s = sc.getBoundingClientRect();
+  const suave = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  if (ativa){
+    if (a.top >= s.top && a.bottom <= s.bottom) return;
+    // 56 px de recuo deixam uma linha feita de contexto; pergunta mais alta que a área vai para o alto
+    const recuo = a.height + 56 <= s.height ? 56 : 12;
+    sc.scrollTo({top:sc.scrollTop + (a.top - s.top) - recuo, behavior:suave});
+  } else if (a.bottom > s.bottom) sc.scrollTo({top:sc.scrollHeight, behavior:suave});
+}
+function atualizarContinua(){
+  const sc = document.getElementById("seq-scroll"), c = document.getElementById("continua"); if (!sc || !c) return;
+  c.hidden = sc.scrollHeight - sc.scrollTop - sc.clientHeight <= 24;
+  sc.onscroll = atualizarContinua;
+  c.onclick = () => sc.scrollBy({top:sc.clientHeight * .8, behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+}
+window.addEventListener("resize", atualizarContinua);
 
 /* ---------- etapa 11: volte ao paciente ---------- */
 const minuscula = s => /^[A-ZÁÉÍÓÚ]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1);
@@ -1420,7 +1455,7 @@ function telaLaudo(){
   return `<div class="screen">
   ${topo(11, "Volte ao paciente", `<button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Fechar">${I.fechar}</button>`)}
   ${progresso(11)}
-  <div class="scroll stagger" id="seq-scroll">
+  <div class="scroll seq stagger" id="seq-scroll">
     ${m ? `<div class="orient"><span class="eyebrow">Contexto informado · ${m.curto}</span><p>${m.texto[0]}</p></div>` : ""}
     ${s.atencao.length ? ins("bad", s.atencao.length === 1 ? "1 ponto de atenção" : s.atencao.length + " pontos de atenção", s.atencao.join(" · ")) : ins("ok", "Nenhum ponto de atenção nas etapas avaliadas", "")}
     <div class="sec"><h3>11.1 — Sua interpretação do ECG</h3><span class="tiny mute">resumo do ECG</span></div>
@@ -1436,6 +1471,7 @@ function telaLaudo(){
     ${pendente("Link do grupo Plantão Descomplicado (nome e destino a definir com o Dr. Vitor). Por ora, o botão copia a interpretação.")}
     <p class="tiny mute" style="text-align:center">Quem leu foi você. O Copiloto garantiu que nenhuma etapa ficou para trás e fez as contas.</p>
   </div>
+  <button class="continua" id="continua" type="button" hidden>${I.baixo}continua</button>
   <div class="foot"><button class="btn primary" type="button" data-ir="motivo">Iniciar novo ECG ${I.seta}</button></div></div>`;
 }
 
@@ -1453,11 +1489,13 @@ function atualizarSaidas(){
   set("sk-res", sk ? String(sk.soma).replace(".", ",") + " mm" : "—");
   set("qt-res", q ? q.qtc : "—"); set("qt-ms", q ? q.qtMs + " ms" : "—");
 }
+/* Tela inteira refeita: devolve a rolagem na mão. Miolo trocado no lugar (tela de etapa):
+   quem devolve é o desenharMiolo, e mexer aqui cancelaria a rolagem suave do focar(). */
 function manterRolagem(fn){
   const sc = document.getElementById("seq-scroll"), topoR = sc ? sc.scrollTop : 0;
   fn();
   const sc2 = document.getElementById("seq-scroll");
-  if (sc2){ sc2.classList.remove("stagger"); sc2.scrollTop = topoR; }
+  if (sc2 && sc2 !== sc){ sc2.classList.remove("stagger"); sc2.scrollTop = topoR; }
 }
 const RAMO6 = ["extra","extraQrs","qrs","tq","pind","temP","rel","bav","pns"];
 const RAMO8 = ["v1","sg1","sg2","sgST","sgS","sg3"];
@@ -1528,58 +1566,77 @@ function irPara(t){
   S.editando = null;
   soltarVisor();
   S.tela = t;
-  desenhar();
+  desenhar(true);
   const sc = document.getElementById("seq-scroll"); if (sc) sc.scrollTop = 0;
 }
 function irAba(a){
   soltarVisor();
-  S.tela = "inicio"; S.aba = a; S.confirmaApagar = false;
-  desenhar();
+  S.tela = "inicio"; S.aba = a; S.confirmaApagar = false; S.editando = null;
+  desenhar(true);
 }
 function escalonar(){
   app.querySelectorAll(".stagger").forEach(st => [...st.children].forEach((el, i) => el.style.setProperty("--i", Math.min(i, 12))));
 }
-function desenhar(){
+/* porta única: com a casca da mesma etapa no DOM, só o miolo é refeito; desenhar(true) força a tela inteira */
+function desenhar(inteira){
+  if (!inteira && S.tela === "seq" && app.querySelector('.screen[data-passo="' + S.cur.passo + '"]')){
+    const sc = document.getElementById("seq-scroll");
+    sc.classList.remove("stagger"); // a entrada escalonada é da casca, não de cada resposta
+    desenharMiolo();
+    return;
+  }
   const telas = { inicio:() => ({inicio, biblioteca, guia, config}[S.aba] || inicio)(),
     motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo };
   app.innerHTML = (telas[S.tela] || telas.inicio)();
-  escalonar(); animarNumeros(); montarMonitor();
+  animarNumeros(); montarMonitor();
+  ligar(app);
+  if (typeof montarControles === "function") montarControles(app);
 
-  app.querySelectorAll("[data-aba]").forEach(b => b.onclick = () => irAba(b.dataset.aba));
-  app.querySelectorAll("[data-ir]").forEach(b => b.onclick = () => irPara(b.dataset.ir));
-  app.querySelectorAll("[data-motivo]").forEach(b => b.onclick = () => {
+  if (S.tela === "foto" && S.cur.tela) montarVisor("#visor", {modo:"livre"});
+  if (S.tela === "ver") montarVisor("#visor", {modo:"livre"});
+  if (S.tela === "medir") ligarMedir();
+  if (S.tela === "seq") desenharMiolo(); // o miolo nasce vazio na casca
+  escalonar();
+  atualizarContinua(); setTimeout(atualizarContinua, 400);
+}
+/* liga os eventos de uma raiz: a tela inteira (app) ou só o miolo redesenhado.
+   Os getElementById ficam como estão — religar é só reatribuir onclick/oninput. */
+function ligar(raiz){
+  raiz.querySelectorAll("[data-aba]").forEach(b => b.onclick = () => irAba(b.dataset.aba));
+  raiz.querySelectorAll("[data-ir]").forEach(b => b.onclick = () => irPara(b.dataset.ir));
+  raiz.querySelectorAll("[data-motivo]").forEach(b => b.onclick = () => {
     S.cur.motivo = b.dataset.motivo; manterRolagem(desenhar);
     const o = document.getElementById("orient"); if (o) o.scrollIntoView({block:"nearest", behavior:"smooth"});
   });
-  app.querySelectorAll("[data-fonte]").forEach(b => b.onclick = () => pedirFoto(b.dataset.fonte));
-  app.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const k = b.dataset.toggle; S.aberto[k] = !S.aberto[k]; manterRolagem(desenhar); });
-  app.querySelectorAll("[data-quad]").forEach(b => b.onclick = () => { S.cur.calQuadrados = +b.dataset.quad; desenhar(); });
-  app.querySelectorAll("[data-ver]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = "ver"; desenhar(); });
-  app.querySelectorAll("[data-fechar-ver]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = "seq"; desenhar(); });
-  app.querySelectorAll("[data-medir]").forEach(b => b.onclick = () => { S.medir = {alvo:b.dataset.medir, chave:b.dataset.chave || null}; soltarVisor(); S.tela = "medir"; desenhar(); });
-  app.querySelectorAll("[data-discutir]").forEach(b => b.onclick = () => {
+  raiz.querySelectorAll("[data-fonte]").forEach(b => b.onclick = () => pedirFoto(b.dataset.fonte));
+  raiz.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const k = b.dataset.toggle; S.aberto[k] = !S.aberto[k]; manterRolagem(desenhar); });
+  raiz.querySelectorAll("[data-quad]").forEach(b => b.onclick = () => { S.cur.calQuadrados = +b.dataset.quad; desenhar(); });
+  raiz.querySelectorAll("[data-ver]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = "ver"; desenhar(); });
+  raiz.querySelectorAll("[data-fechar-ver]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = "seq"; desenhar(); });
+  raiz.querySelectorAll("[data-medir]").forEach(b => b.onclick = () => { S.medir = {alvo:b.dataset.medir, chave:b.dataset.chave || null}; soltarVisor(); S.tela = "medir"; desenhar(); });
+  raiz.querySelectorAll("[data-discutir]").forEach(b => b.onclick = () => {
     const txt = resumo().texto + assinatura();
     try { navigator.clipboard.writeText(txt).then(() => aviso("Interpretação copiada. Cole no grupo."), () => aviso("Não deu para copiar aqui")); }
     catch(_){ aviso("Não deu para copiar aqui"); }
   });
-  app.querySelectorAll("[data-sair-medir]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = "seq"; desenhar(); });
-  app.querySelectorAll("[data-recalibrar]").forEach(b => b.onclick = () => { S.cur.escala = null; S.cur.pontos.fc = null; S.cur.pontos.qrs = null; S.cur.pontos.qt = null; S.vista = null; soltarVisor(); desenhar(); });
-  app.querySelectorAll("[data-voltar]").forEach(b => b.onclick = () => {
+  raiz.querySelectorAll("[data-sair-medir]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = "seq"; desenhar(); });
+  raiz.querySelectorAll("[data-recalibrar]").forEach(b => b.onclick = () => { S.cur.escala = null; S.cur.pontos.fc = null; S.cur.pontos.qrs = null; S.cur.pontos.qt = null; S.vista = null; soltarVisor(); desenhar(); });
+  raiz.querySelectorAll("[data-voltar]").forEach(b => b.onclick = () => {
     if (S.tela === "laudo"){ S.tela = "seq"; S.cur.passo = ULTIMA_PERGUNTA; }
     else if (S.cur.passo > 2){ S.cur.passo--; S.dir = "back"; }
     else S.tela = "foto";
-    S.editando = null; soltarVisor(); desenhar();
+    S.editando = null; soltarVisor(); desenhar(true);
   });
-  app.querySelectorAll("[data-abrir]").forEach(b => b.onclick = () => {
+  raiz.querySelectorAll("[data-abrir]").forEach(b => b.onclick = () => {
     S.detalhe = S.leituras.find(l => l.id === b.dataset.abrir);
     if (S.detalhe){ S.tela = "detalhe"; desenhar(); }
   });
-  app.querySelectorAll("[data-copiar]").forEach(b => b.onclick = () => {
+  raiz.querySelectorAll("[data-copiar]").forEach(b => b.onclick = () => {
     const txt = (S.tela === "detalhe" ? S.detalhe.laudo : resumo().texto) + assinatura();
     try { navigator.clipboard.writeText(txt).then(() => aviso("Laudo copiado"), () => aviso("Não deu para copiar aqui")); }
     catch(_){ aviso("Não deu para copiar aqui"); }
   });
-  app.querySelectorAll("[data-apagar]").forEach(b => b.onclick = () => {
+  raiz.querySelectorAll("[data-apagar]").forEach(b => b.onclick = () => {
     const id = b.dataset.apagar;
     S.leituras = S.leituras.filter(l => l.id !== id);
     gravarJSON(CHAVE, S.leituras);
@@ -1587,19 +1644,19 @@ function desenhar(){
     aviso("Leitura apagada");
     irAba("biblioteca");
   });
-  app.querySelectorAll("[data-fmotivo]").forEach(b => b.onclick = () => { S.filtro.motivo = b.dataset.fmotivo; desenhar(); });
-  app.querySelectorAll("[data-fatencao]").forEach(b => b.onclick = () => { S.filtro.atencao = !S.filtro.atencao; desenhar(); });
-  app.querySelectorAll("[data-guia]").forEach(b => b.onclick = () => { S.guiaAba = b.dataset.guia; desenhar(); });
-  app.querySelectorAll("[data-pref]").forEach(b => b.onclick = () => {
+  raiz.querySelectorAll("[data-fmotivo]").forEach(b => b.onclick = () => { S.filtro.motivo = b.dataset.fmotivo; desenhar(); });
+  raiz.querySelectorAll("[data-fatencao]").forEach(b => b.onclick = () => { S.filtro.atencao = !S.filtro.atencao; desenhar(); });
+  raiz.querySelectorAll("[data-guia]").forEach(b => b.onclick = () => { S.guiaAba = b.dataset.guia; desenhar(); });
+  raiz.querySelectorAll("[data-pref]").forEach(b => b.onclick = () => {
     const k = b.dataset.pref;
     if (k === "tema") S.prefs.tema = S.prefs.tema === "claro" ? "escuro" : "claro"; else S.prefs[k] = !S.prefs[k];
     gravarJSON(CHAVE_PREFS, S.prefs); aplicarTema(); desenhar();
   });
   const nome = document.getElementById("p-nome");
   if (nome) nome.oninput = () => { S.prefs.nome = nome.value; gravarJSON(CHAVE_PREFS, S.prefs); };
-  app.querySelectorAll("[data-apagar-tudo]").forEach(b => b.onclick = () => { S.confirmaApagar = true; desenhar(); });
-  app.querySelectorAll("[data-cancela-apagar]").forEach(b => b.onclick = () => { S.confirmaApagar = false; desenhar(); });
-  app.querySelectorAll("[data-confirma-apagar]").forEach(b => b.onclick = () => {
+  raiz.querySelectorAll("[data-apagar-tudo]").forEach(b => b.onclick = () => { S.confirmaApagar = true; desenhar(); });
+  raiz.querySelectorAll("[data-cancela-apagar]").forEach(b => b.onclick = () => { S.confirmaApagar = false; desenhar(); });
+  raiz.querySelectorAll("[data-confirma-apagar]").forEach(b => b.onclick = () => {
     S.leituras.forEach(l => apagarFoto(l.id)); S.leituras = []; gravarJSON(CHAVE, []); S.confirmaApagar = false;
     aviso("Tudo apagado"); desenhar();
   });
@@ -1609,7 +1666,7 @@ function desenhar(){
     desenhar();
     const b2 = document.getElementById("busca"); if (b2){ b2.focus(); try { b2.setSelectionRange(pos, pos); } catch(_){} }
   };
-  ligarOpts(app);
+  ligarOpts(raiz);
 
   // etapa 4: FC digitada e calculadoras
   const fcIn = document.getElementById("fc");
@@ -1621,23 +1678,23 @@ function desenhar(){
     };
   }
   const contaCalc = inp => { const n = +inp.value, f = +inp.dataset.fator; return !n ? null : (inp.dataset.calc || inp.dataset.gcalc) === "div" ? Math.round(f / n) : Math.round(n * f); };
-  app.querySelectorAll("[data-calc]").forEach(inp => {
+  raiz.querySelectorAll("[data-calc]").forEach(inp => {
     const res = document.getElementById(inp.id + "-res");
     const mostrar = () => { R()[inp.id] = inp.value; const fc = contaCalc(inp); res.textContent = fc ? fc + " bpm" : "—"; };
     inp.oninput = mostrar; mostrar();
   });
-  app.querySelectorAll("[data-usar-calc]").forEach(b => b.onclick = () => {
+  raiz.querySelectorAll("[data-usar-calc]").forEach(b => b.onclick = () => {
     const fc = contaCalc(document.getElementById(b.dataset.usarCalc));
     // usar o valor calculado já é confirmar a FC
     if (fc && fc >= 10 && fc <= 350){ definirFC(fc); S.cur.conf.fc = true; S.aberto.calcfc = false; manterRolagem(desenhar); aviso("FC " + fc + " bpm"); }
     else aviso("Confira o número digitado");
   });
   // etapas 8 e 9: medidas em mm e quadradinhos. Digitou: recalcula o número e o botão Confirmar na hora.
-  app.querySelectorAll("[data-num]").forEach(inp => {
+  raiz.querySelectorAll("[data-num]").forEach(inp => {
     inp.oninput = () => { R()[inp.dataset.num] = inp.value; atualizarSaidas(); atualizarConf(); };
   });
   // guia: calculadoras soltas
-  app.querySelectorAll("[data-gcalc]").forEach(inp => {
+  raiz.querySelectorAll("[data-gcalc]").forEach(inp => {
     const res = document.getElementById(inp.id + "-res");
     const mostrar = () => { S.calc[inp.id.slice(2)] = inp.value; const fc = contaCalc(inp); res.textContent = fc ? fc + " bpm" : "—"; };
     inp.oninput = mostrar; mostrar();
@@ -1652,15 +1709,12 @@ function desenhar(){
     gqt.oninput = qtc; gfc.oninput = qtc; qtc();
   }
 
-  if (S.tela === "foto" && S.cur.tela) montarVisor("#visor", {modo:"livre"});
-  if (S.tela === "ver") montarVisor("#visor", {modo:"livre"});
-  if (S.tela === "medir") ligarMedir();
   if (S.tela === "seq"){
     const b = document.getElementById("proxima");
     if (b) b.onclick = () => {
       S.editando = null;
-      if (S.cur.passo < ULTIMA_PERGUNTA){ S.cur.passo++; S.dir = "fwd"; desenhar(); const sc = document.getElementById("seq-scroll"); if (sc) sc.scrollTop = 0; }
-      else { S.tela = "laudo"; desenhar(); }
+      if (S.cur.passo < ULTIMA_PERGUNTA){ S.cur.passo++; S.dir = "fwd"; desenhar(true); const sc = document.getElementById("seq-scroll"); if (sc) sc.scrollTop = 0; }
+      else { S.tela = "laudo"; desenhar(true); }
     };
   }
   if (S.tela === "laudo"){
