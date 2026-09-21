@@ -396,8 +396,11 @@ function proximoPasso(){
     "Se instável e com pulso: considere cardioversão elétrica sincronizada.",
     "Se sem pulso: siga o protocolo de parada cardiorrespiratória.",
     "Se estável: mantenha monitorização e siga o manejo específico da taquicardia de QRS largo."]});
+  // No BRE o supra pode ser só a alteração secundária do bloqueio: ali quem abre a conduta de oclusão é o Sgarbossa modificado,
+  // não o supra marcado na etapa 7 (orientação do Dr. Vitor, 21/09/2026). Sem BRE, vale o supra territorial.
+  const bre = larguraQRS() === "largo" && r.v1 === "bre";
   const supraTerritorial = isq.pronto && (r.isq || []).includes("supra") && r.supraDist === "sim";
-  if (supraTerritorial || (sg && sg.pronto && sg.positivo)) out.push({t:"Alterações compatíveis com isquemia aguda com supradesnivelamento de ST", p:[
+  if (bre ? !!(sg && sg.pronto && sg.positivo) : supraTerritorial) out.push({t:"Alterações compatíveis com isquemia aguda com supradesnivelamento de ST", p:[
     "Na presença de quadro clínico compatível, priorize estratégia de reperfusão sem atraso.",
     "Avalie imediatamente a possibilidade de intervenção coronária percutânea e, quando ela não puder ser realizada em tempo adequado, a elegibilidade para fibrinólise, conforme protocolo assistencial.",
     "Não retarde a estratégia de reperfusão aguardando exames que não sejam necessários para a decisão inicial."]});
@@ -961,7 +964,7 @@ function config(){
     <div class="card"><h3>Dados</h3><p class="small mute">${n} leitura${n === 1 ? "" : "s"} guardada${n === 1 ? "" : "s"} neste aparelho. Nada é enviado a servidor.</p>
       <button class="btn danger" type="button" data-apagar-tudo="1" ${n ? "" : "disabled"}>${I.lixo}Apagar todas as leituras</button>
       ${S.confirmaApagar ? `${ins("bad", "Tem certeza?", `Isso apaga as ${n} leituras e as fotos. Não dá para desfazer.`)}<div class="row2"><button class="btn" type="button" data-cancela-apagar="1">Cancelar</button><button class="btn danger" type="button" data-confirma-apagar="1">Apagar tudo</button></div>` : ""}</div>
-    <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 6 · roteiro clínico do Dr. Vitor Coutinho (19/09)</p>
+    <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 6.1 · roteiro clínico do Dr. Vitor Coutinho (19/09)</p>
   </div></div>`;
 }
 function assinatura(){
