@@ -1,4 +1,4 @@
-/* Copiloto de ECG — controles de arrastar (fita, traçado, contador).
+/* Copiloto de ECG — controles de arrastar (fita, traçado, contador, réguas de papel).
    Só tokens de style.css. Tudo que é novo começa com `ctl`. */
 
 .ctl{display:flex;flex-direction:column;gap:12px;font-family:var(--sans);-webkit-user-select:none;user-select:none}
@@ -98,3 +98,26 @@ button.ctl-num:active .n::after,button.ctl-num:hover .n::after{opacity:.45}
 .ctl.contador .ctl-passo{min-height:64px}
 .ctl-usar{align-self:flex-start}
 .ctl-usar[disabled]{opacity:.32;cursor:not-allowed}
+
+/* ---------- réguas de papel: R-R e QT ---------- */
+/* a borda é box-shadow, não border: assim o canvas e o papel têm exatamente a mesma caixa */
+.ctl-papel{position:relative;border-radius:var(--r-sm);overflow:hidden;touch-action:pan-y;cursor:ew-resize;
+  background:rgba(0,0,0,.24);
+  box-shadow:inset 0 0 0 1px var(--edge),inset 0 1px 0 var(--hi),0 12px 30px -24px rgba(0,0,0,.95);
+  transition:box-shadow .2s}
+:root[data-theme="light"] .ctl-papel{background:#FFF7F6;
+  box-shadow:inset 0 0 0 1px var(--edge-2),0 12px 30px -24px rgba(0,0,0,.5)}
+.ctl-papel canvas{display:block;width:100%}
+.ctl-papel:focus{outline:0}
+.ctl-papel:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.ctl-papel.sem-anel:focus-visible{outline:0}   /* foco que veio do dedo, não do teclado */
+.ctl-papel.puxando{box-shadow:inset 0 0 0 1px var(--edge-2),inset 0 1px 0 var(--hi),0 12px 30px -20px rgba(0,0,0,.95)}
+:root[data-theme="light"] .ctl-papel.puxando{box-shadow:inset 0 0 0 1px rgba(0,0,0,.2),0 12px 30px -20px rgba(0,0,0,.5)}
+
+.ctl.regua{gap:10px}
+.ctl.regua .ctl-leitura{align-items:center;gap:12px}
+.ctl.regua .ctl-num{flex:none;font-size:2.4rem}
+.ctl.regua .ctl-num .u{font-size:.76rem}
+.ctl.regua .ctl-conta{min-width:0;font-size:.72rem;letter-spacing:0;white-space:normal;line-height:1.35}
+.ctl.regua.vazia .ctl-num,.ctl.regua.vazia .ctl-num .u{color:var(--mute-2)}
+.ctl.regua .ctl-usar{flex:1;align-self:auto}
