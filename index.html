@@ -9,11 +9,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icones/icon-192.png">
+<link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
 <title>Copiloto de ECG</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="controles.css">
 </head>
 <body>
 <div class="frame">
@@ -22,6 +26,8 @@
   <div class="app" id="app"></div>
 </div>
 <input type="file" id="arquivo" accept="image/*" hidden>
+<script src="controles.js"></script>
 <script src="app.js"></script>
+<script>if ("serviceWorker" in navigator) addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });</script>
 </body>
 </html>
