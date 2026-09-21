@@ -332,7 +332,10 @@ p{margin:0}
 .visor .hint{position:absolute;left:10px;right:10px;bottom:10px;background:rgba(8,8,10,.6);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.12);color:#fff;font-size:.8rem;line-height:1.35;padding:8px 11px;border-radius:12px;pointer-events:none}
 .visor .zoomtag{position:absolute;top:10px;right:10px;background:rgba(8,8,10,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.12);color:#fff;font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;padding:5px 8px;border-radius:var(--r-pill);pointer-events:none}
 .visor .tools{position:absolute;top:10px;left:10px;display:flex;gap:6px}
-.visor .tools button{appearance:none;border:1px solid rgba(255,255,255,.14);background:rgba(8,8,10,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#fff;border-radius:var(--r-pill);padding:6px 11px;font-size:.78rem;font-weight:500;cursor:pointer}
+.visor .tools button{appearance:none;position:relative;border:1px solid rgba(255,255,255,.14);background:rgba(8,8,10,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#fff;border-radius:var(--r-pill);padding:6px 11px;font-size:.78rem;font-weight:500;cursor:pointer}
+/* o desenho continua pequeno para não cobrir traçado, mas o dedo pega 44 px. Na horizontal cada botão
+   avança metade do vão até o vizinho (gap 6 px → 3 px de cada lado), então ninguém rouba o toque do outro. */
+.visor .tools button::after{content:"";position:absolute;left:-3px;right:-3px;top:-7px;bottom:-7px}
 .visor.full{height:52vh;min-height:260px}
 .visor.tudo{flex:1;min-height:0;margin-bottom:12px}
 
@@ -351,8 +354,9 @@ p{margin:0}
 .dock.vazio .rot svg{width:15px;height:15px}
 .dock.vazio .acoes{display:flex;gap:5px}
 .dock.vazio .chip{padding:6px 11px;font-size:.78rem}
-/* a linha continua fina, mas o dedo pega 44 px: a área de toque cresce para fora, sem mexer no desenho */
-.dock.vazio .chip::after{content:"";position:absolute;left:0;right:0;top:-6px;bottom:-6px}
+/* a linha continua fina, mas o dedo pega 44 px: a área de toque cresce para fora, sem mexer no desenho.
+   O recuo é medido da caixa de padding (30 px de altura), por isso 7 e não 6. */
+.dock.vazio .chip::after{content:"";position:absolute;left:0;right:0;top:-7px;bottom:-7px}
 .dropzone{appearance:none;border-style:dashed;border-color:var(--edge-2);border-radius:var(--r);padding:26px 16px;text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center;cursor:pointer;color:var(--ink);transition:border-color .2s,transform .18s var(--spring)}
 .dropzone svg{width:30px;height:30px;color:var(--mute)}
 .dropzone strong{font-weight:500}

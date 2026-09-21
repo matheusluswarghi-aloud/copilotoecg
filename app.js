@@ -364,7 +364,9 @@ function proximoPasso(){
 
 /* ---------- foto ---------- */
 function pedirFoto(fonte){
-  S.fotoOrigem = S.tela === "seq" ? "seq" : null; // foto pedida pelo dock volta para a etapa, não para o começo
+  // foto pedida pelo dock volta para a etapa, não para o começo. Refazer a foto dentro do conferidor
+  // (S.tela === "foto") não pode apagar de onde ela veio.
+  if (S.tela !== "foto") S.fotoOrigem = S.tela === "seq" ? "seq" : null;
   if (fonte === "camera") inputArquivo.setAttribute("capture", "environment");
   else inputArquivo.removeAttribute("capture");
   inputArquivo.click();
@@ -627,7 +629,6 @@ const I = {
   copiar:svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>'),
   salvar:svg('<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>'),
   lixo:svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
-  olho:svg('<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
   regua:svg('<path d="M3 17 17 3l4 4L7 21z"/><path d="M8 12l2 2M11 9l2 2M14 6l2 2"/>'),
   check:svg('<path d="M5 12l5 5L20 7"/>'),
   ecg:svg('<path d="M3 12h4l2-6 3 12 3-8 2 2h4"/>'),
@@ -662,8 +663,9 @@ function dockHTML(modo){
   const c = S.cur;
   if (!c.tela) return modo === "laudo" ? "" : `<div class="dock vazio"><span class="rot">${I.camera}Adicionar foto do eletro</span><span class="acoes"><button class="chip" type="button" data-fonte="camera">Câmera</button><button class="chip" type="button" data-fonte="galeria">Galeria</button></span></div>`;
   if (!c.thumb) c.thumb = miniatura();
-  if (modo === "laudo") return `<button class="dock pilula" type="button" data-ver="1"><img src="${c.thumb}" alt=""><span>Eletro</span>${I.expandir}</button>`;
-  if (S.dock === "pilula") return `<button class="dock pilula" type="button" data-dock="abrir"><img src="${c.thumb}" alt=""><span>Eletro</span>${I.expandir}</button>`;
+  const mini = c.thumb ? `<img src="${c.thumb}" alt="">` : ""; // sem miniatura, a pílula sai só com o rótulo
+  if (modo === "laudo") return `<button class="dock pilula" type="button" data-ver="1">${mini}<span>Eletro</span>${I.expandir}</button>`;
+  if (S.dock === "pilula") return `<button class="dock pilula" type="button" data-dock="abrir">${mini}<span>Eletro</span>${I.expandir}</button>`;
   return `<div class="dock aberto"><div class="visor" id="visor">
     <div class="tools"><button type="button" data-zoom="1.6">+</button><button type="button" data-zoom="0.65">−</button><button type="button" data-fit="1">ajustar</button></div>
     <div class="tools dir"><button type="button" data-ver="1" aria-label="Tela cheia">${I.expandir}</button><button type="button" data-dock="recolher" aria-label="Recolher a foto">${I.recolher}</button></div>
@@ -1639,7 +1641,8 @@ function ligar(raiz){
   raiz.querySelectorAll("[data-fonte]").forEach(b => b.onclick = () => pedirFoto(b.dataset.fonte));
   raiz.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const k = b.dataset.toggle; S.aberto[k] = !S.aberto[k]; manterRolagem(desenhar); });
   raiz.querySelectorAll("[data-quad]").forEach(b => b.onclick = () => { S.cur.calQuadrados = +b.dataset.quad; desenhar(); });
-  raiz.querySelectorAll("[data-dock]").forEach(b => b.onclick = () => { S.dock = b.dataset.dock === "recolher" ? "pilula" : "aberto"; soltarVisor(); desenhar(true); });
+  // abrir/recolher muda a altura da área de rolagem: a casca é remontada, mas a leitura fica onde estava
+  raiz.querySelectorAll("[data-dock]").forEach(b => b.onclick = () => { S.dock = b.dataset.dock === "recolher" ? "pilula" : "aberto"; soltarVisor(); manterRolagem(() => desenhar(true)); });
   raiz.querySelectorAll("[data-ver]").forEach(b => b.onclick = () => { S.verVolta = S.tela === "laudo" ? "laudo" : "seq"; soltarVisor(); S.tela = "ver"; desenhar(); });
   raiz.querySelectorAll("[data-fechar-ver]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = S.verVolta; desenhar(true); });
   raiz.querySelectorAll("[data-medir]").forEach(b => b.onclick = () => { S.medir = {alvo:b.dataset.medir, chave:b.dataset.chave || null}; soltarVisor(); S.tela = "medir"; desenhar(); });
