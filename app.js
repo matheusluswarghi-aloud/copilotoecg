@@ -644,7 +644,6 @@ function opt(chave, valor, rotulo, multi){
   return `<button type="button" class="opt${multi ? " multi" : ""}" data-ans="${chave}" data-val="${valor}" data-multi="${multi ? 1 : 0}" aria-pressed="${on}"><span>${rotulo}</span></button>`;
 }
 function ins(k, t, d){ return `<div class="ins ${k}${k === "ok" && !d ? " mini" : ""}"><strong>${t}</strong>${d ? `<p>${d}</p>` : ""}</div>`; }
-function campo(k, rotulo, unidade){ return `<div class="field"><label for="n-${k}">${rotulo}</label><div class="linha"><input type="number" id="n-${k}" inputmode="decimal" step="0.5" min="0" value="${R()[k] ?? ""}" data-num="${k}"><span class="u">${unidade}</span></div></div>`; }
 const terrHTML = () => `<div class="terr">${TERR.map(([, b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div>`;
 function pendente(o){ return `<div class="pendente"><span class="tag">a enviar</span> ${o}</div>`; }
 /* "↓ continua" mora no rodapé, em fluxo: linha própria acima do botão, nunca por cima do conteúdo.
@@ -784,59 +783,15 @@ function monitorHTML(){
   const sub = u ? `${curtoDe(u)} · ${dataCurta(u.quando)}` : "traçado de demonstração";
   return `<div class="hero" id="hero">
     <div class="mon-top"><div><span class="eyebrow">${u ? "Última leitura" : "Monitor"}</span><strong>${titulo}</strong><p class="tiny mute">${sub}</p></div><span class="live"><i></i>${u ? (u.irregular ? "irregular" : "regular") : "demo"}</span></div>
-    <canvas id="mon" aria-hidden="true"></canvas>
+    <div id="mon" class="mon" aria-hidden="true"></div>
     <div class="mon-foot"><span class="num" data-count="${fc}">0<span class="u">bpm</span></span><span class="pill">${u ? (u.qrsLargo ? "QRS largo" : "QRS estreito") : "25 mm/s"}</span></div>
   </div>`;
 }
 /* monitor: traçado varrendo como num monitor de beira de leito, derivado da última leitura */
 function montarMonitor(){
-  const c = document.getElementById("mon");
-  if (!c) return;
-  const u = S.leituras[0], fc = u && u.fc ? u.fc : 72, largo = !!(u && u.qrsLargo), irr = !!(u && u.irregular);
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const W = c.clientWidth || 340, H = 118;
-  c.width = W * dpr; c.height = H * dpr;
-  const ctx = c.getContext("2d"); ctx.scale(dpr, dpr);
-  const RR = 60000 / fc, pxMs = W / 3200; // 3,2 s na tela
-  const forma = t => {
-    let v = 0;
-    if (t >= 0 && t <= 90) v += .12 * Math.sin(Math.PI * t / 90);
-    const q0 = 160, qd = largo ? 130 : 80, u2 = t - q0;
-    if (u2 >= 0 && u2 <= qd){ const pts = [[0,0],[.15,-.12],[.4,1],[.65,-.28],[1,0]]; for (let i = 0; i < 4; i++){ const [a,va] = pts[i], [b,vb] = pts[i+1]; const A = a*qd, B = b*qd; if (u2 >= A && u2 <= B){ v += va + (vb-va)*(u2-A)/(B-A); break; } } }
-    const t0 = q0 + qd + 90; if (t >= t0 && t <= t0 + 200) v += .22 * Math.pow(Math.sin(Math.PI * (t - t0) / 200), 1.3);
-    return v;
-  };
-  const volt = ms => { let v = 0, acc = 0, k = 0; while (acc < ms + RR){ const rr = irr ? RR * (1 + (((k * 7919) % 11) - 5) / 22) : RR; const t = ms - acc; if (t >= 0 && t < rr) v += forma(t); acc += rr; k++; if (k > 400) break; } return v; };
-  const base = H * .6, amp = H * .34;
-  const reduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const grade = () => { ctx.strokeStyle = "rgba(255,255,255,.05)"; ctx.lineWidth = 1; for (let x = 0; x < W; x += 20){ ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } for (let y = 0; y < H; y += 20){ ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); } };
-  const cor = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#fff";
-  let cursor = 0, t0 = performance.now();
-  const desenharTudo = (ate) => {
-    ctx.clearRect(0, 0, W, H); grade();
-    ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.strokeStyle = cor;
-    ctx.shadowColor = "rgba(255,255,255,.35)"; ctx.shadowBlur = 6;
-    ctx.beginPath();
-    for (let x = 0; x <= ate; x += 2){ const y = base - volt(x / pxMs) * amp; if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
-    ctx.stroke(); ctx.shadowBlur = 0;
-  };
-  if (reduzido){ desenharTudo(W); return; }
-  const passo = () => {
-    if (!c.isConnected) return;
-    const el = performance.now() - t0;
-    cursor = (el * pxMs) % W;
-    ctx.clearRect(0, 0, W, H); grade();
-    ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.strokeStyle = cor; ctx.shadowColor = "rgba(255,255,255,.35)"; ctx.shadowBlur = 6;
-    // à esquerda do cursor: a volta atual; à direita: a volta anterior, mais apagada
-    const volta = Math.floor(el * pxMs / W);
-    const tracar = (x0, x1, off, alpha) => { ctx.globalAlpha = alpha; ctx.beginPath(); for (let x = x0; x <= x1; x += 2){ const ms = (x + off) / pxMs; const y = base - volt(ms) * amp; if (x === x0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.stroke(); };
-    tracar(0, cursor, volta * W, 1);
-    if (volta > 0) tracar(Math.min(W, cursor + 22), W, (volta - 1) * W, .35);
-    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
-    ctx.fillStyle = cor; ctx.beginPath(); ctx.arc(cursor, base - volt((cursor + volta * W) / pxMs) * amp, 2.6, 0, 7); ctx.fill();
-    requestAnimationFrame(passo);
-  };
-  requestAnimationFrame(passo);
+  const h = document.getElementById("mon"); if (!h || !window.Controles) return;
+  const u = S.leituras[0];
+  window.Controles.tracado(h, {fc:u && u.fc ? u.fc : 72, largo:!!(u && u.qrsLargo), irregular:!!(u && u.irregular), altura:118, segundos:3.2, grade:true});
 }
 function animarNumeros(){
   const reduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -899,15 +854,14 @@ function guia(){
   const aba = S.guiaAba, t = (k, l) => `<button class="chip" type="button" data-guia="${k}" aria-pressed="${aba === k}">${l}</button>`;
   let corpo = "";
   if (aba === "calc"){
-    const c = S.calc;
     corpo = `<div class="card"><h3>Frequência cardíaca</h3>
-      <div class="calc"><label for="g-cq">Quadradinhos entre dois QRS · 1500 ÷ n</label><div class="linha"><input type="number" id="g-cq" inputmode="decimal" step="0.5" min="0" value="${c.cq || ""}" data-gcalc="div" data-fator="1500"><span class="res" id="g-cq-res">—</span></div></div>
-      <div class="calc"><label for="g-cg">Quadrados grandes entre dois QRS · 300 ÷ n</label><div class="linha"><input type="number" id="g-cg" inputmode="decimal" step="0.5" min="0" value="${c.cg || ""}" data-gcalc="div" data-fator="300"><span class="res" id="g-cg-res">—</span></div></div>
-      <div class="calc"><label for="g-c10">QRS em 10 segundos · n × 6</label><div class="linha"><input type="number" id="g-c10" inputmode="numeric" min="0" value="${c.c10 || ""}" data-gcalc="mul" data-fator="6"><span class="res" id="g-c10-res">—</span></div></div>
+      <p class="tiny mute">Quadradinhos entre dois QRS · 1500 ÷ n. Quadrados grandes entre dois QRS · 300 ÷ n.</p>
+      <div data-ctl="g-rr"></div>
+      <div data-ctl="g-c10"></div>
     </div>
     <div class="card"><h3>QT corrigido (Bazett)</h3><p class="tiny mute">QTc = QT ÷ √RR, com RR em segundos.</p>
-      <div class="row2"><div class="field"><label for="g-qt">QT (ms)</label><input type="number" id="g-qt" inputmode="numeric" value="${c.qt || ""}"></div><div class="field"><label for="g-fc">FC (bpm)</label><input type="number" id="g-fc" inputmode="numeric" value="${c.fc || ""}"></div></div>
-      <div class="readout"><span class="num" id="g-qtc">—<span class="u">ms</span></span></div>
+      <div data-ctl="g-qt"></div>
+      <div data-ctl="g-fc"></div>
       <p class="tiny mute">Prolongado: > 450 ms no masculino, ≥ 460 ms no feminino. Curto: < 350 ms.</p></div>`;
   } else if (aba === "uso"){
     corpo = `<div class="card"><h3>A sequência</h3><p class="small ink2">Motivo do exame → técnica → ritmo → regularidade e frequência → eixo → descarte de arritmias → descarte de isquemia → QRS → intervalo QT → padrões especiais → volte ao paciente. O Copiloto guarda cada resposta e usa nas etapas seguintes, sem perguntar de novo: a largura do QRS, o eixo, a FC e o QTc são reaproveitados.</p></div>
@@ -1085,6 +1039,42 @@ function atualizarConf(){
   btn.disabled = !b.pronta(); btn.querySelector("[data-conf-rot]").textContent = b.rotuloConf();
 }
 
+/* ---------- controles de arrastar no lugar de digitar ----------
+   Regra: aoMudar nunca redesenha (o redesenho destruiria o controle no meio do arrasto). Ele grava
+   em R() e atualiza leituras soltas; quem redesenha é Confirmar, "Usar" e a troca de aba da ajuda. */
+const ZONAS_FC = [{ate:49, rotulo:"bradicardia", classe:"warn"}, {ate:100, rotulo:"normal", classe:"ok"}, {ate:Infinity, rotulo:"taquicardia", classe:"warn"}];
+const MM = {sgST:[0, 15, "Supra do ST no ponto J"], sgS:[0, 40, "Profundidade da onda S"], sV1:[0, 50, "Onda S em V1"], rV56:[0, 50, "Maior onda R entre V5 e V6"]};
+function montarControles(raiz){
+  const C = window.Controles; if (!C) return;
+  raiz.querySelectorAll("[data-ctl]").forEach(host => {
+    const k = host.dataset.ctl, r = R();
+    if (k === "tracado-fc") C.tracado(host, {fc:r.fc || 75, irregular:r.reg === "irregular", altura:64, segundos:2.6, grade:false});
+    else if (k === "fc") C.fita(host, {min:20, max:300, passo:1, valor:r.fc || null, inicial:75, unidade:"bpm", medio:5, maior:10, pxPorPasso:5, digitar:{min:10, max:350}, zonas:ZONAS_FC,
+      aoMudar:v => { const tr = raiz.querySelector('[data-ctl="tracado-fc"]'); if (tr && tr.__ctl) tr.__ctl.definir({fc:v}); },
+      aoSoltar:v => { definirFC(Math.round(v)); atualizarConf(); }});
+    else if (k === "rr") C.reguaRR(host, {valor:num("cq"), aoMudar:v => { r.cq = v; }, aoUsar:fc => usarFC(fc)});
+    else if (k === "c10") C.contador(host, {valor:num("c10") || 0, fator:6, rotulo:"QRS em 10 segundos", aoMudar:n => { r.c10 = n; }, aoUsar:fc => usarFC(fc)});
+    else if (k === "qtQuad") C.reguaQT(host, {valor:num("qtQuad"), fc:r.fc || null, largo:larguraQRS() === "largo", aoMudar:v => { r.qtQuad = v; atualizarConf(); }, aoSoltar:v => { r.qtQuad = v; atualizarConf(); }});
+    else if (MM[k]) C.fita(host, {compacta:true, min:MM[k][0], max:MM[k][1], passo:.5, valor:num(k), inicial:0, unidade:"mm", rotulo:MM[k][2], medio:2, maior:10,
+      aoMudar:v => { r[k] = v; atualizarSaidas(); atualizarConf(); }});
+    else montarControleGuia(host, k);
+  });
+}
+/* "Usar" vale por Confirmar: grava, fecha a ajuda e encerra a edição (senão pedia um Confirmar a mais) */
+function usarFC(fc){
+  if (!(fc >= 10 && fc <= 350)) return aviso("Confira a medida");
+  definirFC(fc); S.cur.conf.fc = true; S.editando = null; S.aberto.calcfc = false; aviso("FC " + fc + " bpm"); manterRolagem(desenhar);
+}
+/* calculadoras do Guia: os mesmos controles, sem "Usar" e sem tocar em R() — os valores vivem em S.calc */
+function montarControleGuia(host, k){
+  const C = window.Controles, c = S.calc;
+  if (k === "g-rr") C.reguaRR(host, {valor:c.rr || null, aoMudar:v => { c.rr = v; }});
+  else if (k === "g-c10") C.contador(host, {valor:c.c10 || 0, fator:6, rotulo:"QRS em 10 segundos", aoMudar:n => { c.c10 = n; }});
+  else if (k === "g-qt") C.reguaQT(host, {valor:c.qt || null, fc:c.fc || null, largo:false, aoMudar:v => { c.qt = v; }});
+  else if (k === "g-fc") C.fita(host, {compacta:true, min:20, max:300, passo:1, valor:c.fc || null, inicial:75, unidade:"bpm", rotulo:"FC", medio:5, maior:10, digitar:{min:10, max:350},
+    aoMudar:v => { c.fc = v; const q = document.querySelector('[data-ctl="g-qt"]'); if (q && q.__ctl) q.__ctl.definirFC(v); }});
+}
+
 /* ---------- etapas 2 a 8 ---------- */
 const SIMNAO = [["sim","Sim"],["nao","Não"]];
 const POL = [["pos","Predominantemente positivo","Positivo"],["neg","Predominantemente negativo","Negativo"]];
@@ -1146,15 +1136,16 @@ const ETAPAS = {
       pronta:() => !!R().fc, rotuloConf:() => R().fc ? `Confirmar · ${R().fc} bpm` : "Confirmar",
       resumo:() => `${R().fc} bpm${R().reg === "irregular" ? " · média" : ""}`,
       corpo:() => {
-        let h = `<div class="field"><label for="fc">Qual a frequência cardíaca?</label><div class="linha"><input type="number" id="fc" inputmode="numeric" min="10" max="350" value="${r.fc || ""}" placeholder="—"><span class="u">bpm</span></div></div>
+        const irregular = r.reg === "irregular", aba = irregular ? "c10" : (S.aberto.calcfcAba || "rr");
+        let h = `<p class="q sm">Qual a frequência cardíaca?${irregular ? ` <span class="tiny mute">frequência média</span>` : ""}</p>
+          <div class="fc-tracado" data-ctl="tracado-fc"></div><div data-ctl="fc"></div>
           ${ajuda("calcfc", "Me ajude a calcular a FC")}`;
         if (S.aberto.calcfc){
-          const calc = (id, rot, fator, tipo) => `<div class="calc"><label for="${id}">${rot}</label><div class="linha"><input type="number" id="${id}" inputmode="decimal" min="0" step="0.5" value="${r[id] || ""}" data-calc="${tipo}" data-fator="${fator}"><span class="res" id="${id}-res">—</span><button class="btn small" type="button" data-usar-calc="${id}">Usar</button></div></div>`;
           h += `<div class="helpbox">`;
-          if (r.reg === "regular") h += `<p><b>1. Quadradinhos pequenos.</b> Conte quantos quadradinhos pequenos existem entre dois QRS consecutivos. FC = 1500 ÷ quadradinhos.</p>${calc("cq","Quadradinhos entre dois QRS",1500,"div")}
-            <p><b>2. Quadrados grandes.</b> Conte quantos quadrados grandes existem entre dois QRS consecutivos. FC = 300 ÷ quadrados grandes.</p>${calc("cg","Quadrados grandes entre dois QRS",300,"div")}`;
-          h += `<p><b>${r.reg === "regular" ? "3. " : ""}Contagem em 10 segundos.</b> Em um trecho contínuo de 10 segundos, como o DII longo, conte o número de QRS. FC ${r.reg === "irregular" ? "média " : ""}= QRS × 6.</p>${calc("c10","QRS em 10 segundos",6,"mul")}`;
-          if (r.reg === "regular" && S.cur.tela) h += `<p><b>4. Régua na foto.</b> Meça a distância entre dois QRS na própria foto.</p><button class="btn small" type="button" data-medir="fc">${I.regua}Medir na foto</button>`;
+          if (!irregular) h += `<div class="hscroll abas"><button class="chip" type="button" data-fcaba="rr" aria-pressed="${aba === "rr"}">Régua no papel</button><button class="chip" type="button" data-fcaba="c10" aria-pressed="${aba === "c10"}">Contar em 10 s</button>${S.cur.tela ? `<button class="chip" type="button" data-fcaba="foto" aria-pressed="${aba === "foto"}">Medir na foto</button>` : ""}</div>`;
+          if (aba === "rr") h += `<p><b>Quadradinhos pequenos.</b> Conte quantos quadradinhos pequenos existem entre dois QRS consecutivos. FC = 1500 ÷ quadradinhos.</p><p><b>Quadrados grandes.</b> Conte quantos quadrados grandes existem entre dois QRS consecutivos. FC = 300 ÷ quadrados grandes.</p><p class="tiny mute">Toque ou arraste até onde cai o segundo QRS no seu traçado. A régua faz as duas contas.</p><div data-ctl="rr"></div>`;
+          if (aba === "c10") h += `<p><b>Contagem em 10 segundos.</b> Em um trecho contínuo de 10 segundos, como o DII longo, conte o número de QRS. FC ${irregular ? "média " : ""}= QRS × 6.</p><div data-ctl="c10"></div>`;
+          if (aba === "foto") h += `<p><b>Régua na foto.</b> Meça a distância entre dois QRS na própria foto.</p><button class="btn small" type="button" data-medir="fc">${I.regua}Medir na foto</button>`;
           h += `</div>`;
         }
         return h;
@@ -1238,7 +1229,7 @@ const ETAPAS = {
           pronta:() => num("sgST") !== null && num("sgS") !== null,
           rotuloConf:() => { const s = sgarbossa(); return s && s.razao !== null ? `Confirmar · razão ${s.razao.toFixed(2).replace(".", ",")}` : "Confirmar"; },
           resumo:() => { const s = sgarbossa(); return `${numBR(num("sgST"))} ÷ ${numBR(num("sgS"))} mm${s && s.razao !== null ? " = " + s.razao.toFixed(2).replace(".", ",") : ""}`; },
-          corpo:() => `<div class="row2">${campo("sgST","Supra do ST no ponto J","mm")}${campo("sgS","Profundidade da onda S","mm")}</div>
+          corpo:() => `<div data-ctl="sgST"></div><div data-ctl="sgS"></div>
             <div class="kv"><span>Supra de ST ÷ profundidade da onda S</span><span id="sg-res">${sg.razao !== null ? sg.razao.toFixed(2).replace(".", ",") : "—"}</span></div>`});
         if (sg.razao !== null) B.res(sg.c3 ? "bad" : "ok", sg.c3 ? "Critério de discordância excessiva presente" : "Sem discordância excessiva", sg.c3 ? "Razão de 0,25 ou mais." : "Razão abaixo de 0,25.");
         if (sg.pronto) B.res(sg.positivo ? "bad" : "info", sg.positivo ? "Critério de Sgarbossa modificado presente" : "Critérios de Sgarbossa modificado não identificados",
@@ -1258,7 +1249,7 @@ const ETAPAS = {
         B.medida("sk", {curto:"Sokolow-Lyon", antes:`<h3>Sobrecarga ventricular esquerda</h3><p class="small ink2">Vamos avaliar a voltagem. Meça:</p>`,
           pronta:() => !!sokolow(), rotuloConf:() => { const s = sokolow(); return s ? `Confirmar · ${numBR(s.soma)} mm` : "Confirmar"; },
           resumo:() => { const s = sokolow(); return s ? `${numBR(s.soma)} mm` : "—"; },
-          corpo:() => `<div class="row2">${campo("sV1","Onda S em V1","mm")}${campo("rV56","Maior onda R entre V5 e V6","mm")}</div>
+          corpo:() => `<div data-ctl="sV1"></div><div data-ctl="rV56"></div>
             <div class="kv"><span>S em V1 + R em V5/V6</span><span id="sk-res">${sk ? numBR(sk.soma) + " mm" : "—"}</span></div>`});
         if (sk){
           B.res(sk.presente ? "warn" : "ok", sk.presente ? "Critério de Sokolow-Lyon presente" : "Critério de Sokolow-Lyon ausente", sk.presente ? "Aumento da voltagem ventricular esquerda: soma maior que 35 mm." : "Soma de 35 mm ou menos.");
@@ -1275,8 +1266,9 @@ const ETAPAS = {
     B.medida("qtQuad", {grande:true, curto:"Intervalo QT", titulo:"Meça o intervalo QT", dica:"Escolha uma derivação em que o final da onda T esteja bem definido.",
       pronta:() => quad() > 0, rotuloConf:() => quad() > 0 ? `Confirmar · ${numBR(quad())} quadradinhos (${Math.round(quad() * MS_POR_MM)} ms)` : "Confirmar",
       resumo:() => `${numBR(quad())} quadradinhos · ${Math.round(quad() * MS_POR_MM)} ms`,
-      corpo:() => `<div class="field"><label for="n-qtQuad">Quantos quadradinhos pequenos existem entre o início do QRS e o final da onda T?</label><div class="linha"><input type="number" id="n-qtQuad" inputmode="decimal" step="0.5" min="0" value="${r.qtQuad ?? ""}" data-num="qtQuad"><span class="u">quadradinhos</span></div></div>
-        ${ajuda("medirqt", "Não sei medir o QT")}${S.aberto.medirqt ? `<div class="helpbox"><p>Meça do início do complexo QRS até o final da onda T.</p>${S.cur.tela ? `<button class="btn small" type="button" data-medir="qt">${I.regua}Medir o QT na foto</button>` : ""}${pendente("Imagem mostrando início do QRS → final da onda T")}</div>` : ""}`});
+      corpo:() => `<p class="small ink2">Quantos quadradinhos pequenos existem entre o início do QRS e o final da onda T?</p>
+        <div data-ctl="qtQuad"></div>
+        ${ajuda("medirqt", "Não sei medir o QT")}${S.aberto.medirqt ? `<div class="helpbox"><p>Meça do início do complexo QRS até o final da onda T.</p>${S.cur.tela ? `<button class="btn small" type="button" data-medir="qt">${I.regua}Medir o QT na foto</button>` : ""}</div>` : ""}`});
     B.escolha("sexo", {sec:"9.1 — Sexo", curto:"Sexo", dica:"Para interpretar o QT corrigido.", opcoes:[["m","Masculino"],["f","Feminino"]]});
     B.html(`<div class="sec"><h3>9.2 — Cálculo automático</h3></div>
       <div class="card"><div class="kv" style="border-top:0;padding-top:0"><span>FC (etapa 4)</span><span>${r.fc} bpm${r.reg === "irregular" ? " · média" : ""}</span></div><div class="kv"><span>QT medido</span><span id="qt-ms">${q ? q.qtMs + " ms" : "—"}</span></div>
@@ -1699,47 +1691,8 @@ function ligar(raiz){
     const b2 = document.getElementById("busca"); if (b2){ b2.focus(); try { b2.setSelectionRange(pos, pos); } catch(_){} }
   };
   ligarOpts(raiz);
-
-  // etapa 4: FC digitada e calculadoras
-  const fcIn = document.getElementById("fc");
-  if (fcIn){
-    fcIn.oninput = () => {
-      const v = Math.round(+fcIn.value);
-      if (v >= 10 && v <= 350) definirFC(v); else { limpar("fc"); delete R().fc; }
-      atualizarConf();
-    };
-  }
-  const contaCalc = inp => { const n = +inp.value, f = +inp.dataset.fator; return !n ? null : (inp.dataset.calc || inp.dataset.gcalc) === "div" ? Math.round(f / n) : Math.round(n * f); };
-  raiz.querySelectorAll("[data-calc]").forEach(inp => {
-    const res = document.getElementById(inp.id + "-res");
-    const mostrar = () => { R()[inp.id] = inp.value; const fc = contaCalc(inp); res.textContent = fc ? fc + " bpm" : "—"; };
-    inp.oninput = mostrar; mostrar();
-  });
-  raiz.querySelectorAll("[data-usar-calc]").forEach(b => b.onclick = () => {
-    const fc = contaCalc(document.getElementById(b.dataset.usarCalc));
-    // usar o valor calculado já é confirmar a FC
-    if (fc && fc >= 10 && fc <= 350){ definirFC(fc); S.cur.conf.fc = true; S.aberto.calcfc = false; manterRolagem(desenhar); aviso("FC " + fc + " bpm"); }
-    else aviso("Confira o número digitado");
-  });
-  // etapas 8 e 9: medidas em mm e quadradinhos. Digitou: recalcula o número e o botão Confirmar na hora.
-  raiz.querySelectorAll("[data-num]").forEach(inp => {
-    inp.oninput = () => { R()[inp.dataset.num] = inp.value; atualizarSaidas(); atualizarConf(); };
-  });
-  // guia: calculadoras soltas
-  raiz.querySelectorAll("[data-gcalc]").forEach(inp => {
-    const res = document.getElementById(inp.id + "-res");
-    const mostrar = () => { S.calc[inp.id.slice(2)] = inp.value; const fc = contaCalc(inp); res.textContent = fc ? fc + " bpm" : "—"; };
-    inp.oninput = mostrar; mostrar();
-  });
-  const gqt = document.getElementById("g-qt"), gfc = document.getElementById("g-fc");
-  if (gqt && gfc){
-    const qtc = () => {
-      S.calc.qt = gqt.value; S.calc.fc = gfc.value;
-      const qt = +gqt.value, fc = +gfc.value;
-      document.getElementById("g-qtc").innerHTML = (qt > 0 && fc > 0 ? Math.round(qt / Math.sqrt(60 / fc)) : "—") + `<span class="u">ms</span>`;
-    };
-    gqt.oninput = qtc; gfc.oninput = qtc; qtc();
-  }
+  // etapa 4: trocar de método na ajuda da FC (régua no papel · contar em 10 s · medir na foto)
+  raiz.querySelectorAll("[data-fcaba]").forEach(b => b.onclick = () => { S.aberto.calcfcAba = b.dataset.fcaba; manterRolagem(desenhar); });
 
   if (S.tela === "seq"){
     const b = document.getElementById("proxima");
@@ -1802,9 +1755,9 @@ function ligarMedir(){
     if (alvo === "fc"){
       const f = Math.round(60000 / ms);
       if (f < 10 || f > 350) return aviso("Confira as bolinhas");
-      definirFC(f); S.cur.conf.fc = true; aviso("FC " + f + " bpm");
+      definirFC(f); S.cur.conf.fc = true; S.editando = null; aviso("FC " + f + " bpm");
     } else if (alvo === "qt"){
-      R().qtQuad = Math.round(ms / MS_POR_MM * 10) / 10; S.cur.conf.qtQuad = true; S.aberto.medirqt = false; aviso("QT " + ms + " ms");
+      R().qtQuad = Math.round(ms / MS_POR_MM * 10) / 10; S.cur.conf.qtQuad = true; S.editando = null; S.aberto.medirqt = false; aviso("QT " + ms + " ms");
     } else {
       const v = ms >= 120 ? "largo" : "estreito", chave = S.medir.chave || "qrs";
       if (R()[chave] !== v) limpar(chave);
