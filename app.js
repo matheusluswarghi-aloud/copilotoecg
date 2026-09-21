@@ -76,7 +76,7 @@ async function continuarLeitura(){
     if (a.temFoto){
       const blob = await lerFoto(FOTO_AND) || await lerFoto(a.id);
       if (blob){ try { c.tela = await prepararFoto(blob); c.blob = blob; if (!c.foto) c.foto = analisarQualidade(c.tela); } catch(_){} }
-      if (!c.tela){ c.escala = null; c.foto = null; }     // sem a foto, a calibração da régua não vale
+      if (!c.tela){ c.escala = null; c.foto = null; c.pontos = nova().pontos; }  // sem a foto, nem a calibração nem as bolinhas de outra imagem valem
     }
     S.cur = c; S.dock = a.dock || "aberto"; S.vista = null; S.aberto = {};
   }
@@ -1839,7 +1839,11 @@ inputArquivo.addEventListener("change", async () => {
     S.cur.foto = analisarQualidade(tela);
     S.cur.escala = null; S.cur.pontos = {cal:null, fc:null, qrs:null, qt:null};
     S.cur.thumb = null; S.vista = null;
-    tela.toBlob(b => { S.cur.blob = b; guardarFoto(FOTO_AND, b); }, "image/jpeg", .88);
+    // esperar o blob antes de desenhar: quem desenha grava o andamento com temFoto, e ele não pode
+    // dizer que há foto antes de a foto estar no aparelho
+    const blob = await new Promise(ok => tela.toBlob(ok, "image/jpeg", .88));
+    S.cur.blob = blob;
+    if (blob) await guardarFoto(FOTO_AND, blob);
     soltarVisor();
     S.tela = "foto";
     desenhar();
