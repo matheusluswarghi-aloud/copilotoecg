@@ -36,14 +36,16 @@ function tela(host, altura){
   return o;
 }
 
-// ponteiro com captura; p = {x, y} relativo ao elemento
+// ponteiro com captura; p = {x, y} relativo ao elemento.
+// `fim(p, e, cancelado)`: cancelado = o navegador tomou o gesto (rolagem), não o dedo confirmando a medida.
 function arrasto(el, h){
   let id = null;
   const rel = e => { const r = el.getBoundingClientRect(); return {x:e.clientX - r.left, y:e.clientY - r.top}; };
   const baixo = e => { if (id !== null) return; id = e.pointerId; try { el.setPointerCapture(id); } catch(_){}
     if (e.cancelable) e.preventDefault(); if (h.inicio) h.inicio(rel(e), e); };
   const meio = e => { if (e.pointerId !== id) return; if (e.cancelable) e.preventDefault(); if (h.mover) h.mover(rel(e), e); };
-  const cima = e => { if (e.pointerId !== id) return; try { el.releasePointerCapture(id); } catch(_){} id = null; if (h.fim) h.fim(rel(e), e); };
+  const cima = e => { if (e.pointerId !== id) return; try { el.releasePointerCapture(id); } catch(_){} id = null;
+    if (h.fim) h.fim(rel(e), e, e.type === "pointercancel"); };
   el.addEventListener("pointerdown", baixo); el.addEventListener("pointermove", meio);
   el.addEventListener("pointerup", cima); el.addEventListener("pointercancel", cima);
   return () => { el.removeEventListener("pointerdown", baixo); el.removeEventListener("pointermove", meio);
@@ -114,6 +116,7 @@ function fita(host, o){
   let val = o.valor == null ? null : arred(o.valor);
   let pos = trava(val == null ? (o.inicial == null ? min : o.inicial) : val, min, max);
   let anim = null, puxando = false, x0 = 0, pos0 = 0, rastro = [];
+  let morto = false, valAntes = null, posAntes = 0, avisou = false;   // medida é coisa séria: laço nenhum fala depois de destruir
 
   host.innerHTML = "";
   const raiz = document.createElement("div");
@@ -182,34 +185,49 @@ function fita(host, o){
   }
 
   function pararAnim(){ if (anim){ cancelAnimationFrame(anim); anim = null; } }
-  function soltar(){ if (o.aoSoltar) o.aoSoltar(val); }
+  // vivo: destruído ou fora do DOM, o controle não mexe em valor nem fala com o app
+  const vivo = () => !morto && trilho.isConnected;
+  function avisar(v){ if (!vivo()) return; avisou = true; if (o.aoMudar) o.aoMudar(v); }
+  function soltar(){ if (!vivo()) return; if (o.aoSoltar) o.aoSoltar(val); }
 
   // move a régua; avisa só quando o valor encaixado muda
   function levar(np, calado){
+    if (!vivo()) return false;
     pos = trava(np, min, max);
     const v = arred(pos), mudou = v !== val;
     val = v; mostrar();
-    if (mudou && !calado){ vibrar(); if (o.aoMudar) o.aoMudar(val); }
+    if (mudou && !calado){ vibrar(); avisar(val); }
     return mudou;
   }
 
   // primeira interação com a fita vazia: parte de `inicial`
   function estrear(calado){
-    if (val != null) return false;
+    if (val != null || !vivo()) return false;
     pos = trava(o.inicial == null ? min : o.inicial, min, max);
     val = arred(pos); mostrar();
-    if (!calado && o.aoMudar) o.aoMudar(val);
+    if (!calado) avisar(val);
     return true;
   }
 
+  // gesto tomado pelo navegador (rolagem): a fita volta para onde estava e o app regrava o valor de antes
+  function desfazer(){
+    pararAnim();
+    val = valAntes;
+    pos = valAntes == null ? trava(o.inicial == null ? min : o.inicial, min, max) : posAntes;
+    mostrar();
+    if (avisou){ avisar(val); soltar(); }   // aoSoltar devolve ao app o valor restaurado e reabre o Confirmar
+  }
+
   function encaixar(ms){
+    if (!vivo()) return;
     const alvo = trava(arred(pos), min, max);
     if (!ms || reduzido() || Math.abs(alvo - pos) < 1e-6){ pos = alvo; mostrar(); soltar(); return; }
     const de = pos, t0 = performance.now();
     const quadro = () => {
+      if (!vivo()){ anim = null; return; }
       const p = Math.min(1, (performance.now() - t0) / ms);
       pos = de + (alvo - de) * (1 - Math.pow(1 - p, 3)); mostrar();
-      if (p < 1 && trilho.isConnected){ anim = requestAnimationFrame(quadro); return; }
+      if (p < 1){ anim = requestAnimationFrame(quadro); return; }
       anim = null; pos = alvo; mostrar(); soltar();
     };
     anim = requestAnimationFrame(quadro);
@@ -217,14 +235,16 @@ function fita(host, o){
 
   function inercia(vel){
     pararAnim();
+    if (!vivo()) return;
     if (reduzido()){ encaixar(0); return; }
     if (Math.abs(vel) < .02){ encaixar(120); return; }
     let v = vel, ant = performance.now();
     const quadro = () => {
+      if (!vivo()){ anim = null; return; }   // conferir antes de levar(): o quadro que sobra não pode gravar medida
       const ag = performance.now(), dt = Math.min(48, ag - ant); ant = ag;
       v *= Math.pow(.95, dt / 16.67);
       levar(pos - v * dt / ppu);
-      if (Math.abs(v) < .02 || !trilho.isConnected){ anim = null; encaixar(120); return; }
+      if (Math.abs(v) < .02){ anim = null; encaixar(120); return; }
       anim = requestAnimationFrame(quadro);
     };
     anim = requestAnimationFrame(quadro);
@@ -232,10 +252,12 @@ function fita(host, o){
 
   const desligarArrasto = arrasto(trilho, {
     inicio(p){
+      if (!vivo()) return;
       // foco no dedo: o trilho passa a responder às setas, mas sem o anel de foco do teclado
       pararAnim(); trilho.classList.add("sem-anel"); try { trilho.focus({preventScroll:true}); } catch(_){}
       puxando = true; raiz.classList.add("arrastando");
       x0 = p.x; pos0 = pos; rastro = [{x:p.x, t:performance.now()}];
+      valAntes = val; posAntes = pos; avisou = false;
       estrear();
     },
     mover(p){
@@ -243,9 +265,10 @@ function fita(host, o){
       rastro.push({x:p.x, t:performance.now()}); if (rastro.length > 12) rastro.shift();
       levar(pos0 - (p.x - x0) / ppu);           // arrastar para a esquerda aumenta
     },
-    fim(){
+    fim(p, e, cancelado){
       if (!puxando) return;
       puxando = false; raiz.classList.remove("arrastando");
+      if (cancelado){ desfazer(); return; }
       const ag = performance.now(), ult = rastro[rastro.length - 1];
       let vel = 0;                               // px/ms nos últimos 80 ms; dedo parado = sem inércia
       if (ult && ag - ult.t < 80){
@@ -256,11 +279,12 @@ function fita(host, o){
     }
   });
 
-  const andar = d => { pararAnim(); estrear(true); levar(arred(pos) + d * passo); soltar(); };
+  const andar = d => { if (!vivo()) return; pararAnim(); estrear(true); levar(arred(pos) + d * passo); soltar(); };
   const paraMenos = botaoRepetir(raiz.querySelector('.ctl-passo[data-d="-1"]'), () => andar(-1));
   const paraMais = botaoRepetir(raiz.querySelector('.ctl-passo[data-d="1"]'), () => andar(1));
 
   const naTecla = e => {
+    if (!vivo()) return;
     trilho.classList.remove("sem-anel");
     let d = 0;
     if (e.key === "ArrowLeft" || e.key === "ArrowDown") d = -1;
@@ -281,13 +305,14 @@ function fita(host, o){
   // digitado fora da fita: a agulha para no limite, mas o valor devolvido é o digitado
   function definir(v, op){
     pararAnim();
+    if (morto) return;
     if (v == null){ val = null; pos = trava(o.inicial == null ? min : o.inicial, min, max); mostrar(); }
     else {
       const n = trava(Number(v), dig.min, dig.max);
       val = +(min + Math.round((n - min) / passo) * passo).toFixed(casas);
       pos = trava(val, min, max); mostrar();
     }
-    if (!(op && op.silencioso)){ if (o.aoMudar) o.aoMudar(val); if (o.aoSoltar) o.aoSoltar(val); }
+    if (!(op && op.silencioso)){ avisar(val); soltar(); }
   }
 
   let ro = null;
@@ -297,6 +322,7 @@ function fita(host, o){
     valor: () => val,
     definir: definir,
     destruir(){
+      morto = true; puxando = false;
       pararAnim(); desligarArrasto(); paraMenos(); paraMais();
       trilho.removeEventListener("keydown", naTecla); trilho.removeEventListener("blur", naSaida);
       if (ro) ro.disconnect();
@@ -319,7 +345,7 @@ function tracado(host, o){
   const raiz = document.createElement("div"); raiz.className = "ctl tracado"; host.appendChild(raiz);
   const t = tela(raiz, altura);
   let amostras = new Float32Array(t.larg), msPorPx = segundos * 1000 / t.larg;
-  let fase = 0, k = 0, x = 0, volta = 0, anim = null, ant = 0;
+  let fase = 0, k = 0, x = 0, volta = 0, anim = null, ant = 0, morto = false;
 
   const rrAgora = () => (60000 / fc) * (irr ? (1 + (((k * 7919) % 11) - 5) / 22) : 1);
 
@@ -381,7 +407,7 @@ function tracado(host, o){
   }
 
   function passo(){
-    if (!t.c.isConnected){ anim = null; return; }
+    if (morto || !t.c.isConnected){ anim = null; return; }
     const ag = performance.now(), dt = Math.min(64, ag - ant); ant = ag;
     const alvo = x + dt / msPorPx;
     for (let col = Math.floor(x) + 1; col <= Math.floor(alvo); col++){
@@ -410,13 +436,14 @@ function tracado(host, o){
   const api = {
     definir(op){
       op = op || {};
+      if (morto) return;
       if (op.fc != null) fc = op.fc;
       if (op.largo != null) largo = !!op.largo;
       if (op.irregular != null) irr = !!op.irregular;
       if (reduzido()) encher();
       else if (!anim && t.c.isConnected){ ant = performance.now(); anim = requestAnimationFrame(passo); }   // voltou ao DOM
     },
-    destruir(){ if (anim) cancelAnimationFrame(anim); anim = null; if (ro) ro.disconnect(); host.innerHTML = ""; delete host.__ctl; }
+    destruir(){ morto = true; if (anim) cancelAnimationFrame(anim); anim = null; if (ro) ro.disconnect(); host.innerHTML = ""; delete host.__ctl; }
   };
   host.__ctl = api;
   return api;
@@ -426,7 +453,7 @@ function tracado(host, o){
 function contador(host, o){
   o = o || {};
   const fator = o.fator == null ? 6 : o.fator, uni = o.unidadeConta || "QRS";
-  let n = o.valor || 0;
+  let n = o.valor || 0, morto = false;
 
   host.innerHTML = "";
   const raiz = document.createElement("div"); raiz.className = "ctl contador";
@@ -448,25 +475,27 @@ function contador(host, o){
     if (elUsar){ elUsar.disabled = !n; elUsar.textContent = n ? "Usar " + fmt(resultado(), 0) + " bpm" : "Usar"; }
   }
 
+  const vivo = () => !morto && raiz.isConnected;
   function contar(novo, pulsa, calado){
+    if (morto) return;
     const antes = n; n = Math.max(0, Math.round(novo)); mostrar();
     if (n === antes || calado) return;
     vibrar();
     if (pulsa && !reduzido()){ elToque.classList.remove("pulsa"); void elToque.offsetWidth; elToque.classList.add("pulsa"); }
-    if (o.aoMudar) o.aoMudar(n);
+    if (vivo() && o.aoMudar) o.aoMudar(n);
   }
 
   elToque.addEventListener("click", () => contar(n + 1, true));
   elToque.addEventListener("animationend", () => elToque.classList.remove("pulsa"));
   const paraMenos = botaoRepetir(raiz.querySelector('.ctl-passo[data-d="-1"]'), () => contar(n - 1));
   raiz.querySelector("[data-zerar]").addEventListener("click", () => contar(0));
-  if (elUsar) elUsar.addEventListener("click", () => { if (n && o.aoUsar) o.aoUsar(resultado()); });
+  if (elUsar) elUsar.addEventListener("click", () => { if (n && vivo() && o.aoUsar) o.aoUsar(resultado()); });
 
   const api = {
     valor: () => n,
     resultado: resultado,
     definir(v, op){ contar(v || 0, false, !!(op && op.silencioso)); },
-    destruir(){ paraMenos(); host.innerHTML = ""; delete host.__ctl; }
+    destruir(){ morto = true; paraMenos(); host.innerHTML = ""; delete host.__ctl; }
   };
   mostrar();
   host.__ctl = api;
@@ -524,16 +553,35 @@ function pegador(ctx, x, cy, cor){
 
 // papel arrastável: o dedo leva o marcador, sem inércia; setas andam meio quadradinho.
 // `aceita(x)` recusa o começo do toque fora da área útil; arrasto que já começou segue valendo.
+// O marcador NÃO salta no pointerdown: o mesmo toque pode ser o médico rolando a página por cima do papel.
+// Ele anda no primeiro movimento de lado, ou no pointerup de um toque parado; cancelado, volta ao valor de antes.
+const LADO = 6;
 function ligarPapel(el, h){
-  let puxando = false;
+  let puxando = false, pegou = false, andou = false, p0 = null, antes = null;
   const desligar = arrasto(el, {
     inicio(p){
       if (h.aceita && !h.aceita(p.x)) return;
       el.classList.add("sem-anel"); try { el.focus({preventScroll:true}); } catch(_){}
-      puxando = true; el.classList.add("puxando"); h.levar(h.de(p.x));
+      puxando = true; pegou = false; andou = false; p0 = p; antes = h.valor();
+      el.classList.add("puxando");
     },
-    mover(p){ if (puxando) h.levar(h.de(p.x)); },
-    fim(p){ if (!puxando) return; puxando = false; el.classList.remove("puxando"); h.levar(h.de(p.x)); h.soltar(); }
+    mover(p){
+      if (!puxando) return;
+      const dx = p.x - p0.x, dy = p.y - p0.y;
+      if (Math.abs(dx) >= LADO || Math.abs(dy) >= LADO) andou = true;
+      if (!pegou){
+        if (Math.abs(dx) < LADO || Math.abs(dx) <= Math.abs(dy)) return;
+        pegou = true;
+      }
+      h.levar(h.de(p.x));
+    },
+    fim(p, e, cancelado){
+      if (!puxando) return;
+      puxando = false; el.classList.remove("puxando");
+      if (cancelado){ h.restaurar(antes); pegou = andou = false; return; }
+      if (pegou || !andou){ h.levar(h.de(p.x)); h.soltar(); }   // arrasto, ou toque parado que marca onde o dedo encostou
+      pegou = andou = false;
+    }
   });
   const naTecla = e => {
     el.classList.remove("sem-anel");
@@ -552,7 +600,7 @@ function reguaRR(host, o){
   const MIN = 4, MAX = 50, QS = 52, ALT = 132, INICIAL = 20, R = 46;
   const REGRA = [300, 150, 100, 75, 60, 50, 43, 38, 33, 30];
   const arred = v => trava(Math.round(v * 2) / 2, MIN, MAX);
-  let val = o.valor == null ? null : arred(o.valor);
+  let val = o.valor == null ? null : arred(o.valor), morto = false;
 
   host.innerHTML = "";
   const raiz = document.createElement("div");
@@ -637,19 +685,27 @@ function reguaRR(host, o){
     pintar();
   }
 
+  const vivo = () => !morto && pap.isConnected;
   function levar(nv){
+    if (!vivo()) return;
     const n = arred(nv);
     if (n === val) return;
     val = n; mostrar(); vibrar();
     if (o.aoMudar) o.aoMudar(val);
   }
-  const soltar = () => { if (o.aoSoltar) o.aoSoltar(val); };
-  const andar = d => { levar(val == null ? INICIAL : val + d * .5); soltar(); };
+  // gesto tomado pelo navegador: volta ao valor de antes e avisa o app, sem aoSoltar (nada foi confirmado)
+  function restaurar(v){
+    if (!vivo() || v === val) return;
+    val = v == null ? null : arred(v); mostrar();
+    if (o.aoMudar) o.aoMudar(val);
+  }
+  const soltar = () => { if (vivo() && o.aoSoltar) o.aoSoltar(val); };
+  const andar = d => { if (!vivo()) return; levar(val == null ? INICIAL : val + d * .5); soltar(); };
 
-  const desligar = ligarPapel(pap, {de: x => x / (t.larg / QS) - 1, levar, soltar, andar});
+  const desligar = ligarPapel(pap, {de: x => x / (t.larg / QS) - 1, valor: () => val, restaurar, levar, soltar, andar});
   const paraMenos = botaoRepetir(raiz.querySelector('.ctl-passo[data-d="-1"]'), () => andar(-1));
   const paraMais = botaoRepetir(raiz.querySelector('.ctl-passo[data-d="1"]'), () => andar(1));
-  if (elUsar) elUsar.addEventListener("click", () => { if (val != null && o.aoUsar) o.aoUsar(fc()); });
+  if (elUsar) elUsar.addEventListener("click", () => { if (val != null && vivo() && o.aoUsar) o.aoUsar(fc()); });
 
   let ro = null;
   if (window.ResizeObserver){ ro = new ResizeObserver(() => { t.ajustar(); pintar(); }); ro.observe(pap); }
@@ -658,10 +714,11 @@ function reguaRR(host, o){
     valor: () => val,
     fc: fc,
     definir(v, op){
+      if (morto) return;
       val = v == null ? null : arred(v); mostrar();
       if (!(op && op.silencioso)){ if (o.aoMudar) o.aoMudar(val); if (o.aoSoltar) o.aoSoltar(val); }
     },
-    destruir(){ desligar(); paraMenos(); paraMais(); if (ro) ro.disconnect(); host.innerHTML = ""; delete host.__ctl; }
+    destruir(){ morto = true; desligar(); paraMenos(); paraMais(); if (ro) ro.disconnect(); host.innerHTML = ""; delete host.__ctl; }
   };
   mostrar();
   host.__ctl = api;
@@ -673,7 +730,7 @@ function reguaQT(host, o){
   o = o || {};
   const MIN = 5, MAX = 20, QS = 26, X0Q = 5, ALT = 168, FANTASMA = 9;
   const arred = v => trava(Math.round(v * 2) / 2, MIN, MAX);
-  let val = o.valor == null ? null : arred(o.valor), fc = o.fc == null ? null : o.fc;
+  let val = o.valor == null ? null : arred(o.valor), fc = o.fc == null ? null : o.fc, morto = false;
   const largo = !!o.largo;
 
   host.innerHTML = "";
@@ -746,17 +803,26 @@ function reguaQT(host, o){
     pintar();
   }
 
+  const vivo = () => !morto && pap.isConnected;
   function levar(nv){
+    if (!vivo()) return;
     const n = arred(nv);
     if (n === val) return;
     val = n; mostrar(); vibrar();
     if (o.aoMudar) o.aoMudar(val);
   }
-  const soltar = () => { if (o.aoSoltar) o.aoSoltar(val); };
-  const andar = d => { levar(val == null ? FANTASMA : val + d * .5); soltar(); };
+  // gesto tomado pelo navegador: volta ao valor de antes e avisa o app, sem aoSoltar (nada foi confirmado)
+  function restaurar(v){
+    if (!vivo() || v === val) return;
+    val = v == null ? null : arred(v); mostrar();
+    if (o.aoMudar) o.aoMudar(val);
+  }
+  const soltar = () => { if (vivo() && o.aoSoltar) o.aoSoltar(val); };
+  const andar = d => { if (!vivo()) return; levar(val == null ? FANTASMA : val + d * .5); soltar(); };
 
   // só pega à direita do início do QRS: toque sobre a P ou o QRS não mexe no fim da T
-  const desligar = ligarPapel(pap, {de: x => x / (t.larg / QS) - X0Q, aceita: x => x >= X0Q * (t.larg / QS), levar, soltar, andar});
+  const desligar = ligarPapel(pap, {de: x => x / (t.larg / QS) - X0Q, aceita: x => x >= X0Q * (t.larg / QS),
+    valor: () => val, restaurar, levar, soltar, andar});
   const paraMenos = botaoRepetir(raiz.querySelector('.ctl-passo[data-d="-1"]'), () => andar(-1));
   const paraMais = botaoRepetir(raiz.querySelector('.ctl-passo[data-d="1"]'), () => andar(1));
   numeroTocavel(elNum, {ler: () => val, gravar: n => api.definir(n), min: MIN, max: MAX, passo: .5});
@@ -769,11 +835,12 @@ function reguaQT(host, o){
     ms: ms,
     qtc: qtc,
     definir(v, op){
+      if (morto) return;
       val = v == null ? null : arred(v); mostrar();
       if (!(op && op.silencioso)){ if (o.aoMudar) o.aoMudar(val); if (o.aoSoltar) o.aoSoltar(val); }
     },
-    definirFC(v){ fc = v == null ? null : v; mostrar(); },
-    destruir(){ desligar(); paraMenos(); paraMais(); if (ro) ro.disconnect(); host.innerHTML = ""; delete host.__ctl; }
+    definirFC(v){ if (morto) return; fc = v == null ? null : v; mostrar(); },
+    destruir(){ morto = true; desligar(); paraMenos(); paraMais(); if (ro) ro.disconnect(); host.innerHTML = ""; delete host.__ctl; }
   };
   mostrar();
   host.__ctl = api;

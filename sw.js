@@ -28,8 +28,9 @@ self.addEventListener("fetch", e => {
   if (url.origin !== location.origin) return;
   e.respondWith((async () => {
     const c = await caches.open(VERSAO);
-    // requisição de navegação não aceita opções extras no fetch
-    const rede = (req.mode === "navigate" ? fetch(req) : fetch(req, {cache:"no-cache"})).then(r => { if (r.ok) c.put(req, r.clone()); return r; });
+    // a requisição de navegação não aceita opções extras: refazê-la pela URL é o jeito de revalidar
+    // (sem isso o Pages serve a página do cache HTTP, com max-age de 10 min)
+    const rede = (req.mode === "navigate" ? fetch(req.url, {cache:"no-cache"}) : fetch(req, {cache:"no-cache"})).then(r => { if (r.ok) c.put(req, r.clone()); return r; });
     try { return await comLimite(rede, 3000); }
     catch(_){
       const guardado = await c.match(req, {ignoreSearch:true}) || (req.mode === "navigate" ? await c.match("index.html") : null);

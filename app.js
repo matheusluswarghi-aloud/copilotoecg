@@ -1,5 +1,5 @@
 "use strict";
-/* Copiloto de ECG — versão 5
+/* Copiloto de ECG — versão 6
    Roteiro clínico: documento do Dr. Vitor ("Ferramenta ECG - Protótipo atualizado", 19/09/2026):
    11 etapas, da queixa ao próximo passo clínico.
    Tudo roda no aparelho: a foto do eletro nunca sai do celular.
@@ -35,7 +35,8 @@ async function lerFoto(id){
   catch(_){ return undefined; }
 }
 const lerJSON = (k, padrao) => { try { return JSON.parse(localStorage.getItem(k)) || padrao; } catch(_){ return padrao; } };
-const gravarJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(_){} };
+// devolve se gravou: aparelho cheio ou modo privado não podem passar por leitura salva
+const gravarJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch(_){ return false; } };
 
 /* ---------- estado ---------- */
 function nova(){
@@ -60,6 +61,10 @@ aplicarTema();
 const CHAVE_AND = "copiloto.andamento", FOTO_AND = "andamento", VALIDADE_AND = 48 * 36e5;
 function gravarAndamento(){
   const c = S.cur; if (!c.motivo) return;
+  // a chave é única: a leitura nova enterra a anterior só agora, quando grava a dela. Se esta não tem
+  // foto, a foto da anterior ficaria órfã no banco.
+  const a = lerJSON(CHAVE_AND, null);
+  if (a && a.id !== c.id && !c.tela) apagarFoto(FOTO_AND);
   gravarJSON(CHAVE_AND, {id:c.id, quando:c.quando, motivo:c.motivo, passo:c.passo, r:c.r, conf:c.conf, escala:c.escala, calQuadrados:c.calQuadrados, pontos:c.pontos, foto:c.foto, temFoto:!!c.tela, dock:S.dock, salvoEm:Date.now()});
 }
 function lerAndamento(){
@@ -634,7 +639,7 @@ function montarVisor(sel, opts){
 }
 function visorHTML(classe, dica){
   return `<div class="visor ${classe}" id="visor">
-    <div class="tools"><button type="button" data-zoom="1.6">+</button><button type="button" data-zoom="0.65">−</button><button type="button" data-fit="1">ajustar</button></div>
+    <div class="tools"><button type="button" data-zoom="1.6" aria-label="Aproximar">+</button><button type="button" data-zoom="0.65" aria-label="Afastar">−</button><button type="button" data-fit="1" aria-label="Ajustar à tela">ajustar</button></div>
     <div class="zoomtag">100%</div>
     ${dica ? `<div class="hint">${dica}</div>` : ""}
   </div>`;
@@ -712,14 +717,15 @@ function dockHTML(modo){
   if (modo === "laudo") return `<button class="dock pilula" type="button" data-ver="1">${mini}<span>Eletro</span>${I.expandir}</button>`;
   if (S.dock === "pilula") return `<button class="dock pilula" type="button" data-dock="abrir">${mini}<span>Eletro</span>${I.expandir}</button>`;
   return `<div class="dock aberto"><div class="visor" id="visor">
-    <div class="tools"><button type="button" data-zoom="1.6">+</button><button type="button" data-zoom="0.65">−</button><button type="button" data-fit="1">ajustar</button></div>
+    <div class="tools"><button type="button" data-zoom="1.6" aria-label="Aproximar">+</button><button type="button" data-zoom="0.65" aria-label="Afastar">−</button><button type="button" data-fit="1" aria-label="Ajustar à tela">ajustar</button></div>
     <div class="tools dir"><button type="button" data-ver="1" aria-label="Tela cheia">${I.expandir}</button><button type="button" data-dock="recolher" aria-label="Recolher a foto">${I.recolher}</button></div>
     <div class="zoomtag">100%</div></div></div>`;
 }
 const dois = n => String(n).padStart(2, "0");
+/* sem número grande à esquerda: ele repetia o "Etapa N de 11" e o número-fantasma do fundo,
+   e roubava a largura do título, que saía cortado no celular */
 function topo(passo, titulo, extra){
   return `<div class="top"><span class="ghostnum" aria-hidden="true">${dois(passo)}</span><button class="icobtn ghost" type="button" data-voltar="1" aria-label="Voltar">${I.voltar}</button>
-    <span class="step-num">${dois(passo)}</span>
     <div class="t"><small>Etapa ${passo} de ${ULTIMO}${motivo() ? " · " + motivo().curto : ""}</small><strong>${titulo}</strong></div>${extra || ""}</div>`;
 }
 /* traçado decorativo, derivado da leitura: FC dá o espaçamento, QRS largo alarga o complexo, irregular embaralha */
@@ -955,7 +961,7 @@ function config(){
     <div class="card"><h3>Dados</h3><p class="small mute">${n} leitura${n === 1 ? "" : "s"} guardada${n === 1 ? "" : "s"} neste aparelho. Nada é enviado a servidor.</p>
       <button class="btn danger" type="button" data-apagar-tudo="1" ${n ? "" : "disabled"}>${I.lixo}Apagar todas as leituras</button>
       ${S.confirmaApagar ? `${ins("bad", "Tem certeza?", `Isso apaga as ${n} leituras e as fotos. Não dá para desfazer.`)}<div class="row2"><button class="btn" type="button" data-cancela-apagar="1">Cancelar</button><button class="btn danger" type="button" data-confirma-apagar="1">Apagar tudo</button></div>` : ""}</div>
-    <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 5 · roteiro clínico do Dr. Vitor Coutinho (19/09)</p>
+    <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 6 · roteiro clínico do Dr. Vitor Coutinho (19/09)</p>
   </div></div>`;
 }
 function assinatura(){
@@ -968,7 +974,7 @@ function assinatura(){
 function telaMotivo(){
   const m = motivo();
   return `<div class="screen">
-  <div class="top"><span class="ghostnum" aria-hidden="true">01</span><button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Voltar">${I.voltar}</button><span class="step-num">01</span><div class="t"><small>Etapa 1 de ${ULTIMO}</small><strong>Olhe para o paciente</strong></div></div>
+  <div class="top"><span class="ghostnum" aria-hidden="true">01</span><button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Etapa 1 de ${ULTIMO}</small><strong>Olhe para o paciente</strong></div></div>
   ${progresso(1)}
   <div class="scroll seq stagger" id="seq-scroll">
     <p class="q">O que motivou este ECG?</p>
@@ -1037,8 +1043,9 @@ function telaMedir(){
   <div class="foot"><button class="btn primary" type="button" id="usar-medida">Usar esta medida</button></div></div>`;
 }
 function telaVer(){
+  const passo = S.verVolta === "laudo" ? ULTIMO : S.cur.passo;   // aberta do laudo, a leitura está na etapa 11
   return `<div class="screen">
-  <div class="top"><button class="icobtn ghost" type="button" data-fechar-ver="1" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Etapa ${S.cur.passo} de ${ULTIMO}</small><strong>O eletro</strong></div><button class="icobtn" type="button" data-fechar-ver="1" aria-label="Fechar">${I.fechar}</button></div>
+  <div class="top"><button class="icobtn ghost" type="button" data-fechar-ver="1" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Etapa ${passo} de ${ULTIMO}</small><strong>O eletro</strong></div><button class="icobtn" type="button" data-fechar-ver="1" aria-label="Fechar">${I.fechar}</button></div>
   ${visorHTML("tudo", "Arraste para mover, pince para aproximar.")}</div>`;
 }
 
@@ -1103,20 +1110,38 @@ function atualizarConf(){
    em R() e atualiza leituras soltas; quem redesenha é Confirmar, "Usar" e a troca de aba da ajuda. */
 const ZONAS_FC = [{ate:49, rotulo:"bradicardia", classe:"warn"}, {ate:100, rotulo:"normal", classe:"ok"}, {ate:Infinity, rotulo:"taquicardia", classe:"warn"}];
 const MM = {sgST:[0, 15, "Supra do ST no ponto J"], sgS:[0, 40, "Profundidade da onda S"], sV1:[0, 50, "Onda S em V1"], rV56:[0, 50, "Maior onda R entre V5 e V6"]};
+const grava = (k, v) => { const r = R(); if (v == null) delete r[k]; else r[k] = v; };
+/* enquanto a fita anda, Confirmar fica travado: o rótulo dele ainda é do valor antigo e um toque
+   registraria uma medida que o médico não viu. Quem reabre é o aoSoltar, já com o valor final. */
+function travarConf(){
+  const b = S._ativa && S._ativa.t === "medida" ? app.querySelector(`[data-conf="${S._ativa.chave}"]`) : null;
+  if (b) b.disabled = true;
+}
 function montarControles(raiz){
   const C = window.Controles; if (!C) return;
   raiz.querySelectorAll("[data-ctl]").forEach(host => {
     const k = host.dataset.ctl, r = R();
+    // um controle que exploda não pode deixar o resto da etapa (e o botão Próxima) pela metade
+    try {
     if (k === "tracado-fc") C.tracado(host, {fc:r.fc || 75, irregular:r.reg === "irregular", altura:64, segundos:2.6, grade:false});
     else if (k === "fc") C.fita(host, {min:20, max:300, passo:1, valor:r.fc || null, inicial:75, unidade:"bpm", medio:5, maior:10, pxPorPasso:5, digitar:{min:10, max:350}, zonas:ZONAS_FC,
-      aoMudar:v => { const tr = raiz.querySelector('[data-ctl="tracado-fc"]'); if (tr && tr.__ctl) tr.__ctl.definir({fc:v}); },
-      aoSoltar:v => { definirFC(Math.round(v)); atualizarConf(); }});
-    else if (k === "rr") C.reguaRR(host, {valor:num("cq"), aoMudar:v => { r.cq = v; }, aoUsar:fc => usarFC(fc)});
-    else if (k === "c10") C.contador(host, {valor:num("c10") || 0, fator:6, rotulo:"QRS em 10 segundos", aoMudar:n => { r.c10 = n; }, aoUsar:fc => usarFC(fc)});
-    else if (k === "qtQuad") C.reguaQT(host, {valor:num("qtQuad"), fc:r.fc || null, largo:larguraQRS() === "largo", aoMudar:v => { r.qtQuad = v; atualizarConf(); }, aoSoltar:v => { r.qtQuad = v; atualizarConf(); }});
+      aoMudar:v => { const tr = raiz.querySelector('[data-ctl="tracado-fc"]'); if (tr && tr.__ctl) tr.__ctl.definir({fc:v || 75});
+        const d = document.getElementById("fc-dica"); if (d) d.hidden = v != null;
+        travarConf(); },
+      aoSoltar:v => { definirFC(v == null ? null : Math.round(v)); atualizarConf(); }});
+    else if (k === "rr") C.reguaRR(host, {valor:num("cq"), aoMudar:v => grava("cq", v), aoUsar:fc => usarFC(fc)});
+    else if (k === "c10") C.contador(host, {valor:num("c10") || 0, fator:6, rotulo:"QRS em 10 segundos", aoMudar:n => grava("c10", n), aoUsar:fc => usarFC(fc)});
+    else if (k === "qtQuad"){
+      const gravaQT = v => { grava("qtQuad", v); atualizarConf(); };
+      const c = C.reguaQT(host, {valor:num("qtQuad"), fc:r.fc || null, largo:larguraQRS() === "largo", aoMudar:gravaQT, aoSoltar:gravaQT});
+      // a régua anda de meio em meio quadradinho: 9,3 medidos na foto nascem 9,5, e régua, botão e R() têm de dizer o mesmo
+      if (c.valor() !== num("qtQuad")) gravaQT(c.valor());
+    }
     else if (MM[k]) C.fita(host, {compacta:true, min:MM[k][0], max:MM[k][1], passo:.5, valor:num(k), inicial:0, unidade:"mm", rotulo:MM[k][2], medio:2, maior:10,
-      aoMudar:v => { r[k] = v; atualizarSaidas(); atualizarConf(); }});
-    else montarControleGuia(host, k);
+      aoMudar:v => { grava(k, v); atualizarSaidas(); travarConf(); },
+      aoSoltar:v => { grava(k, v); atualizarSaidas(); atualizarConf(); }});
+    else montarControleGuia(host, k, raiz);
+    } catch(e){ console.error("controle " + k, e); }
   });
 }
 /* "Usar" vale por Confirmar: grava, fecha a ajuda e encerra a edição (senão pedia um Confirmar a mais) */
@@ -1125,13 +1150,13 @@ function usarFC(fc){
   definirFC(fc); S.cur.conf.fc = true; S.editando = null; S.aberto.calcfc = false; aviso("FC " + fc + " bpm"); manterRolagem(desenhar);
 }
 /* calculadoras do Guia: os mesmos controles, sem "Usar" e sem tocar em R() — os valores vivem em S.calc */
-function montarControleGuia(host, k){
-  const C = window.Controles, c = S.calc;
+function montarControleGuia(host, k, raiz){
+  const C = window.Controles, c = S.calc, onde = raiz || document;
   if (k === "g-rr") C.reguaRR(host, {valor:c.rr || null, aoMudar:v => { c.rr = v; }});
   else if (k === "g-c10") C.contador(host, {valor:c.c10 || 0, fator:6, rotulo:"QRS em 10 segundos", aoMudar:n => { c.c10 = n; }});
   else if (k === "g-qt") C.reguaQT(host, {valor:c.qt || null, fc:c.fc || null, largo:false, aoMudar:v => { c.qt = v; }});
   else if (k === "g-fc") C.fita(host, {compacta:true, min:20, max:300, passo:1, valor:c.fc || null, inicial:75, unidade:"bpm", rotulo:"FC", medio:5, maior:10, digitar:{min:10, max:350},
-    aoMudar:v => { c.fc = v; const q = document.querySelector('[data-ctl="g-qt"]'); if (q && q.__ctl) q.__ctl.definirFC(v); }});
+    aoMudar:v => { c.fc = v; const q = onde.querySelector('[data-ctl="g-qt"]'); if (q && q.__ctl) q.__ctl.definirFC(v); }});
 }
 
 /* ---------- etapas 2 a 8 ---------- */
@@ -1198,6 +1223,7 @@ const ETAPAS = {
         const irregular = r.reg === "irregular", aba = irregular ? "c10" : (S.aberto.calcfcAba || "rr");
         let h = `<p class="q sm">Qual a frequência cardíaca?${irregular ? ` <span class="tiny mute">frequência média</span>` : ""}</p>
           <div class="fc-tracado" data-ctl="tracado-fc"></div><div data-ctl="fc"></div>
+          <p class="tiny mute" id="fc-dica"${r.fc ? " hidden" : ""}>Arraste a fita, ou toque no número para digitar.</p>
           ${ajuda("calcfc", "Me ajude a calcular a FC")}`;
         if (S.aberto.calcfc){
           h += `<div class="helpbox">`;
@@ -1391,13 +1417,20 @@ function telaSeq(){
   <div class="scroll seq stagger" id="seq-scroll"></div>
   <div class="foot">${pilula()}<button class="btn primary" type="button" id="proxima" disabled>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
 }
+/* os controles seguram laços (inércia da fita, repetição do +/−) que gravam medida.
+   Trocar o innerHTML por cima deixaria esses laços vivos, gravando depois do Confirmar. */
+function soltarControles(raiz){
+  if (!raiz) return;
+  raiz.querySelectorAll("[data-ctl]").forEach(h => { if (h.__ctl) try { h.__ctl.destruir(); } catch(_){} });
+}
 function desenharMiolo(){
   const sc = document.getElementById("seq-scroll"), v = ETAPAS[S.cur.passo](), rb = renderBlocos(v.blocos), completa = v.ok() && !rb.temAtiva;
   const topoR = sc.scrollTop;
+  soltarControles(sc);
   sc.innerHTML = rb.html;
   sc.scrollTop = topoR; // o miolo é trocado no lugar: devolve a rolagem antes de o focar() ajustar
   ligar(sc);
-  if (typeof montarControles === "function") montarControles(sc);
+  montarControles(sc);
   const b = document.getElementById("proxima"), estava = !b.disabled;
   b.disabled = !completa; b.classList.toggle("pronta", completa && !estava);
   // a pílula ocupa uma linha do rodapé: decide antes, senão o focar() mede uma área que vai encolher
@@ -1417,13 +1450,25 @@ function focar(){
     sc.scrollTo({top:sc.scrollTop + (a.top - s.top) - recuo, behavior:suave});
   } else if (a.bottom > s.bottom) sc.scrollTo({top:sc.scrollHeight, behavior:suave});
 }
+/* a pílula é sobre conteúdo, não sobre curso de rolagem: o padding do fim da área não é conteúdo.
+   Medir pelo último filho evita a pílula acesa numa etapa que já está inteira na tela. */
 function atualizarContinua(){
   const sc = document.getElementById("seq-scroll"), c = document.getElementById("continua"); if (!sc || !c) return;
-  c.hidden = sc.scrollHeight - sc.scrollTop - sc.clientHeight <= 24;
+  const ult = sc.lastElementChild;
+  c.hidden = !ult || ult.getBoundingClientRect().bottom - sc.getBoundingClientRect().bottom <= 24;
   sc.onscroll = atualizarContinua;
   c.onclick = () => sc.scrollBy({top:sc.clientHeight * .8, behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
 }
 window.addEventListener("resize", atualizarContinua);
+/* a moldura não rola: quem rola é a área de conteúdo. O navegador ainda empurra a moldura quando
+   traz um campo para perto do teclado (ou num scrollIntoView), e aí a barra do topo some. */
+["frame", "app"].forEach(c => {
+  const el = document.querySelector("." + c);
+  if (el) el.addEventListener("scroll", () => { el.scrollTop = 0; el.scrollLeft = 0; });
+});
+document.addEventListener("focusout", e => {
+  if (e.target && e.target.matches && e.target.matches(".ctl-inp, #p-nome, #busca")) window.scrollTo(0, 0);
+});
 
 /* ---------- etapa 11: volte ao paciente ---------- */
 const minuscula = s => /^[A-ZÁÉÍÓÚ]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1);
@@ -1548,7 +1593,7 @@ function telaLaudo(){
       : `<div class="card conduta"><span class="eyebrow">Agora volte ao paciente</span><p class="small ink2">Relacione os achados eletrocardiográficos ao quadro clínico, exame físico e demais informações disponíveis.</p><p class="small ink2">O ECG é uma parte do raciocínio clínico e não o raciocínio inteiro.</p></div>`}</div>
     <div class="sec"><h3>11.1 — Sua interpretação do ECG</h3></div>
     <div class="laudo" id="laudo">${s.texto}${assinatura() ? `<div class="sig">${assinatura().trim()}</div>` : ""}</div>
-    <div class="salvo"><span class="tag ok salva">Salva neste aparelho</span></div>
+    <div class="salvo">${S.salvou === false ? `<span class="tag bad salva">Não foi possível salvar neste aparelho</span>` : `<span class="tag ok salva">Salva neste aparelho</span>`}</div>
     <button class="btn wide" type="button" data-toggle="blocos" aria-expanded="${!!S.aberto.blocos}">${S.aberto.blocos ? I.recolher + "Ocultar etapa por etapa" : I.seta + "Ver etapa por etapa"}</button>
     ${S.aberto.blocos ? s.blocos.map((b, i) => `<div class="ins ${b.k}"><span class="ix">${dois(i + 1)} · ${b.t.toUpperCase()}</span><strong>${b.v}</strong>${b.d ? `<p>${b.d}</p>` : ""}</div>`).join("") : ""}
     <button class="btn wide" type="button" data-discutir="1">Discutir no grupo Plantão Descomplicado</button>
@@ -1585,12 +1630,13 @@ const RAMO8 = ["v1","sg1","sg2","sgST","sgS","sg3"];
 const DEPENDE = {
   cal:["calSeguir"], elet:["eletSeguir"],
   ritmo:["wiz1"].concat(RAMO6), wiz1:["wiz2"].concat(RAMO6), wiz2:["wiz3"].concat(RAMO6), wiz3:RAMO6,
-  reg:RAMO6.concat(["cq","cg","c10","fc"]), fc:RAMO6, extra:["extraQrs"], qrs:["tq","pind","qrs8","qrsMs"].concat(RAMO8), qrs8:["qrsMs"].concat(RAMO8), v1:["sg1","sg2","sgST","sgS","sg3"],
+  reg:RAMO6.concat(["cq","c10","fc"]), fc:RAMO6, extra:["extraQrs"], qrs:["tq","pind","qrs8","qrsMs"].concat(RAMO8), qrs8:["qrsMs"].concat(RAMO8), v1:["sg1","sg2","sgST","sgS","sg3"],
   temP:["rel","bav","qrs"], rel:["bav"], pns:["qrs"],
   di:["dii"], avf:["dii"], supraDist:["terr"], amp8:["svd","sV1","rV56","strainVE","sk"]
 };
 function limpar(k){ (DEPENDE[k] || []).forEach(x => { const tinha = x in R() || x in S.cur.conf; delete R()[x]; delete S.cur.conf[x]; if (tinha) limpar(x); }); }
-function definirFC(v){ if (R().fc !== v) limpar("fc"); R().fc = v; }
+// v null: a fita voltou a ficar sem valor (gesto cancelado). Apaga a chave em vez de gravar nulo.
+function definirFC(v){ const a = R().fc == null ? null : R().fc; if (a !== v) limpar("fc"); if (v == null) delete R().fc; else R().fc = v; }
 function atualizarWiz(){
   const r = R();
   if (r.ritmo !== "duvida"){ delete r.wizFim; return; }
@@ -1638,7 +1684,7 @@ function salvarLeitura(o){
     conc:s.titulo, alerta:s.atencao.length > 0, laudo:s.texto, thumb:miniatura(),
     fc:r.fc || null, qrsLargo:larguraQRS() === "largo", irregular:r.reg === "irregular", qtc:qt() ? qt().qtc : null };
   S.leituras = [reg].concat(S.leituras.filter(l => l.id !== reg.id));
-  gravarJSON(CHAVE, S.leituras);
+  S.salvou = gravarJSON(CHAVE, S.leituras);   // a marca da etapa 11 só pode dizer "salva" se gravou mesmo
   if (S.cur.blob) guardarFoto(S.cur.id, S.cur.blob);
   descartarAndamento();
   if (o && o.silencioso) return;
@@ -1647,8 +1693,9 @@ function salvarLeitura(o){
 }
 function soltarVisor(){ if (S.visor){ S.visor.destruir(); S.visor = null; } }
 function irPara(t){
-  // leitura nova enterra a anterior: o botão Continuar fica logo acima, e ler um eletro leva dois minutos
-  if (t === "motivo" && S.tela !== "foto" && S.tela !== "seq"){ descartarAndamento(); S.cur = nova(); S.vista = null; S.aberto = {}; S.dock = "aberto"; S.fotoOrigem = null; }
+  // tocar em "Nova leitura" não apaga nada: quem enterra a leitura anterior é a nova, quando grava
+  // o andamento dela (a chave é única). Assim, tocar por engano e voltar mantém o "Continuar".
+  if (t === "motivo" && S.tela !== "foto" && S.tela !== "seq"){ S.cur = nova(); S.vista = null; S.aberto = {}; S.dock = "aberto"; S.fotoOrigem = null; }
   if (t === "foto") S.fotoOrigem = null; // só se chega aqui pelo "Iniciar leitura": o voltar é para o motivo
   S.editando = null;
   soltarVisor();
@@ -1675,10 +1722,11 @@ function desenhar(inteira){
   const telas = { inicio:() => ({inicio, biblioteca, guia, config}[S.aba] || inicio)(),
     motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo };
   soltarVisor(); // a tela inteira é refeita: o visor que ficaria órfão levaria o S.vista junto no próximo resize
+  soltarControles(app);
   app.innerHTML = (telas[S.tela] || telas.inicio)();
   animarNumeros(); montarMonitor();
   ligar(app);
-  if (typeof montarControles === "function") montarControles(app);
+  montarControles(app);
 
   if (S.tela === "foto" && S.cur.tela) montarVisor("#visor", {modo:"livre"});
   if (S.tela === "ver") montarVisor("#visor", {modo:"livre"});
@@ -1690,7 +1738,8 @@ function desenhar(inteira){
   if (S.guiaFoco){ const c = document.getElementById("calc-" + S.guiaFoco); if (c) c.parentNode.scrollTop = c.offsetTop - c.parentNode.offsetTop; S.guiaFoco = null; }
   escalonar();
   atualizarContinua(); setTimeout(atualizarContinua, 400);
-  if (["foto", "seq", "medir", "ver"].includes(S.tela)) gravarAndamento();
+  // a tela cheia aberta pelo laudo é leitura terminada: gravar andamento aqui a ressuscitaria no início
+  if (["foto", "seq", "medir", "ver"].includes(S.tela) && !(S.tela === "ver" && S.verVolta === "laudo")) gravarAndamento();
   travarTela(emLeitura());
 }
 /* liga os eventos de uma raiz: a tela inteira (app) ou só o miolo redesenhado.
@@ -1725,7 +1774,7 @@ function ligar(raiz){
   raiz.querySelectorAll("[data-voltar]").forEach(b => b.onclick = () => {
     if (S.tela === "laudo"){ S.tela = "seq"; S.cur.passo = ULTIMA_PERGUNTA; }
     else if (S.cur.passo > 2){ S.cur.passo--; S.dir = "back"; }
-    else S.tela = "foto";
+    else { S.fotoOrigem = null; S.tela = "foto"; }   // senão o voltar da tela de foto devolvia para a etapa, e a volta ficava presa
     S.editando = null; soltarVisor(); desenhar(true);
   });
   raiz.querySelectorAll("[data-abrir]").forEach(b => b.onclick = () => {
@@ -1834,7 +1883,7 @@ function ligarMedir(){
     } else {
       const v = ms >= 120 ? "largo" : "estreito", chave = S.medir.chave || "qrs";
       if (R()[chave] !== v) limpar(chave);
-      R()[chave] = v; R().qrsMs = ms; S.aberto.medirqrs = false; S.aberto.medirqrs8 = false; aviso("QRS " + ms + " ms · " + v);
+      R()[chave] = v; R().qrsMs = ms; S.editando = null; S.aberto.medirqrs = false; S.aberto.medirqrs8 = false; aviso("QRS " + ms + " ms · " + v);
     }
     soltarVisor(); S.tela = "seq"; desenhar();
   };
