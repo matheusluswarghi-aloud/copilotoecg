@@ -38,10 +38,10 @@ function nova(){
   return { id:"L" + Date.now(), quando:Date.now(), motivo:null,
     tela:null, foto:null, blob:null, escala:null, calQuadrados:5,
     pontos:{cal:null, fc:null, qrs:null, qt:null},
-    passo:2, r:{}, salva:false };
+    passo:2, r:{}, conf:{}, salva:false };
 }
 const S = {
-  tela:"inicio", aba:"inicio", cur:nova(), leituras:lerJSON(CHAVE, []),
+  tela:"inicio", aba:"inicio", cur:nova(), leituras:lerJSON(CHAVE, []), editando:null,
   prefs:Object.assign({nome:"", assinatura:true, tema:"escuro"}, lerJSON(CHAVE_PREFS, {})),
   visor:null, vista:null, detalhe:null, aberto:{}, medir:null, calc:{},
   filtro:{busca:"", motivo:"todas", atencao:false}, guiaAba:"calc"
@@ -89,7 +89,7 @@ const ULTIMA_PERGUNTA = 10, ULTIMO = 11;
 
 /* ---------- raciocínio ---------- */
 const R = () => S.cur.r;
-function calibPadrao(){ const r = R(); return r.vel === "25" && r.amp === "10"; }
+function calibPadrao(){ return R().cal === "padrao"; }
 function sinusal(){
   const r = R();
   if (r.ritmo === "sim") return true;
@@ -110,140 +110,95 @@ function eixo(){
 }
 function faixaFC(){ const f = R().fc; if (!f) return null; return f > 100 ? "alta" : f < 50 ? "baixa" : "normal"; }
 
-/* Etapa 6: parte do que o médico já respondeu e só pergunta o que falta. */
-function arritmia(){
+/* Etapa 6: parte do que o médico já respondeu e só pergunta o que falta. Sem construtor, só calcula. */
+function arritmia(B){
+  B = B || NULO;
   const r = R(), fc = r.fc, reg = r.reg, sin = sinusal(), faixa = faixaFC();
-  const partes = [];
-  const q = txt => partes.push(`<p class="q sm">${txt}</p>`);
-  const fim = (res, extra) => ({html:partes.join(""), pronto:true, res, extra});
-  const falta = () => ({html:partes.join(""), pronto:false});
+  const fim = (res, extra) => ({pronto:true, res, extra});
+  const falta = () => ({pronto:false});
+  const SN = [["nao","Não"],["sim","Sim"]];
   if (sin === null || !fc || !reg) return falta();
 
   if (sin){
     const res = faixa === "alta" ? {t:"Taquicardia sinusal", d:`Ritmo sinusal com FC de ${fc} bpm.`, k:"warn"}
       : faixa === "baixa" ? {t:"Bradicardia sinusal", d:`Ritmo sinusal com FC de ${fc} bpm.`, k:"warn"}
       : {t:"Ritmo sinusal", d:`FC de ${fc} bpm.`, k:"ok"};
-    partes.push(ins(res.k, res.t, res.d));
-    q("Há batimentos diferentes do ritmo habitual?");
-    partes.push(`<div class="opts">${opt("extra","nao","Não")}${opt("extra","sim","Sim")}</div>`);
+    B.res(res.k, res.t, res.d);
+    B.escolha("extra", {curto:"Batimentos diferentes", titulo:"Há batimentos diferentes do ritmo habitual?", opcoes:SN});
     if (!r.extra) return falta();
     if (r.extra === "nao") return fim(res, null);
-    q("Vamos avaliar esses batimentos. O QRS desse batimento diferente é:");
-    partes.push(`<div class="opts">${opt("extraQrs","estreito","Estreito")}${opt("extraQrs","largo","Largo")}</div>`);
+    B.escolha("extraQrs", {curto:"QRS do batimento diferente", titulo:"Vamos avaliar esses batimentos. O QRS desse batimento diferente é:", opcoes:[["estreito","Estreito"],["largo","Largo"]]});
     if (!r.extraQrs) return falta();
     const ex = r.extraQrs === "estreito" ? "Provável extrassístole supraventricular" : "Provável extrassístole ventricular";
-    partes.push(ins("warn", ex, ""));
+    B.res("warn", ex, "");
     return fim(res, ex);
   }
 
-  partes.push(`<div class="chips"><span class="chip info">ritmo <b>não sinusal</b></span><span class="chip info"><b>${reg}</b></span><span class="chip info">FC <b>${fc}</b> bpm</span></div>`);
+  B.texto(`<div class="chips"><span class="chip info">ritmo <b>não sinusal</b></span><span class="chip info"><b>${reg}</b></span><span class="chip info">FC <b>${fc}</b> bpm</span></div>`);
+  const resultado = res => { B.res(res.k, res.t, res.d); return fim(res); };
 
   const perguntaQRS = () => {
-    q("O QRS é estreito ou largo?");
-    partes.push(`<div class="opts">${opt("qrs","estreito","Estreito — menor que 120 ms")}${opt("qrs","largo","Largo — 120 ms ou mais")}</div>`);
-    partes.push(ajuda("medirqrs", "Não sei medir o QRS"));
-    if (S.aberto.medirqrs){
-      partes.push(`<div class="helpbox">
+    B.escolha("qrs", {curto:"Largura do QRS", titulo:"O QRS é estreito ou largo?", opcoes:[["estreito","Estreito — menor que 120 ms","Estreito"],["largo","Largo — 120 ms ou mais","Largo"]],
+      depois:ajuda("medirqrs", "Não sei medir o QRS") + (S.aberto.medirqrs ? `<div class="helpbox">
         ${S.cur.tela ? `<p>Meça o QRS com a régua na foto, do começo ao fim do complexo. O app diz se passa de 120 ms (3 quadradinhos).</p><button class="btn small" type="button" data-medir="qrs">${I.regua}Medir o QRS na foto</button>`
           : `<p>Conte os quadradinhos do começo ao fim do QRS: a partir de 3 quadradinhos (120 ms), ele é largo.</p>`}
-        ${pendente("Orientação do Dr. Vitor sobre como medir o QRS")}
-      </div>`);
-    }
+        ${pendente("Orientação do Dr. Vitor sobre como medir o QRS")}</div>` : "")});
     return !!r.qrs;
   };
 
   if (faixa === "alta"){
-    partes.push(ins("info", "Vamos caracterizar a taquiarritmia", ""));
+    B.res("info", "Vamos caracterizar a taquiarritmia", "");
     if (!perguntaQRS()) return falta();
     if (r.qrs === "estreito" && reg === "regular"){
-      q("Você identifica:");
-      partes.push(`<div class="opts">${opt("tq","flutter","Ondas F de flutter")}${opt("tq","patrial","Ondas P não sinusais")}${opt("tq","nenhum","Nenhum dos dois")}</div>`);
+      B.escolha("tq", {curto:"Atividade atrial", titulo:"Você identifica:", opcoes:[["flutter","Ondas F de flutter"],["patrial","Ondas P não sinusais"],["nenhum","Nenhum dos dois"]]});
       if (!r.tq) return falta();
       const res = {flutter:{t:"Flutter atrial"}, patrial:{t:"Taquicardia atrial"}, nenhum:{t:"Taquicardia supraventricular"}}[r.tq];
       res.d = `FC ${fc} bpm.`; res.k = "warn";
-      partes.push(ins(res.k, res.t, res.d));
-      return fim(res);
+      return resultado(res);
     }
     if (r.qrs === "estreito"){
-      q("Você identifica ondas P individualizadas?");
-      partes.push(`<div class="opts">${opt("pind","nao","Não")}${opt("pind","sim","Sim")}</div>`);
+      B.escolha("pind", {curto:"Ondas P individualizadas", titulo:"Você identifica ondas P individualizadas?", opcoes:SN});
       if (!r.pind) return falta();
-      const res = r.pind === "nao" ? {t:"Fibrilação atrial de alta resposta ventricular", d:`FC ${fc} bpm.`, k:"warn"}
-        : {t:"Taquicardia irregular com ondas P individualizadas", d:"Considere taquicardia atrial multifocal ou extrassístoles atriais frequentes como causa de irregularidade.", k:"warn"};
-      partes.push(ins(res.k, res.t, res.d));
-      return fim(res);
+      return resultado(r.pind === "nao" ? {t:"Fibrilação atrial de alta resposta ventricular", d:`FC ${fc} bpm.`, k:"warn"}
+        : {t:"Taquicardia irregular com ondas P individualizadas", d:"Considere taquicardia atrial multifocal ou extrassístoles atriais frequentes como causa de irregularidade.", k:"warn"});
     }
-    if (reg === "regular"){
-      const res = {t:"Taquicardia regular de QRS largo", d:"Considere taquicardia ventricular até que se prove o contrário.", k:"bad"};
-      partes.push(ins(res.k, res.t, res.d));
-      return fim(res);
-    }
-    const res = {t:"Taquicardia irregular de QRS largo", d:"Pense principalmente em: fibrilação atrial com aberrância ou bloqueio de ramo · fibrilação atrial pré-excitada · taquicardia ventricular polimórfica.", k:"bad"};
-    partes.push(ins(res.k, res.t, res.d));
-    return fim(res);
+    if (reg === "regular") return resultado({t:"Taquicardia regular de QRS largo", d:"Considere taquicardia ventricular até que se prove o contrário.", k:"bad"});
+    return resultado({t:"Taquicardia irregular de QRS largo", d:"Pense principalmente em: fibrilação atrial com aberrância ou bloqueio de ramo · fibrilação atrial pré-excitada · taquicardia ventricular polimórfica.", k:"bad"});
   }
 
   if (faixa === "baixa"){
-    partes.push(ins("info", "Vamos caracterizar a bradiarritmia", ""));
-    q("Tem onda P?");
-    partes.push(`<div class="opts">${opt("temP","nao","Não")}${opt("temP","sim","Sim")}</div>`);
+    B.res("info", "Vamos caracterizar a bradiarritmia", "");
+    B.escolha("temP", {curto:"Onda P", titulo:"Tem onda P?", opcoes:SN});
     if (!r.temP) return falta();
     if (r.temP === "nao"){
-      if (reg === "irregular"){
-        const res = {t:"Considerar fibrilação atrial com baixa resposta ventricular", d:"Ritmo irregular, sem ondas P individualizadas.", k:"warn"};
-        partes.push(ins(res.k, res.t, res.d));
-        return fim(res);
-      }
+      if (reg === "irregular") return resultado({t:"Considerar fibrilação atrial com baixa resposta ventricular", d:"Ritmo irregular, sem ondas P individualizadas.", k:"warn"});
       if (!perguntaQRS()) return falta();
-      const res = r.qrs === "estreito" ? {t:"Considerar escape juncional", d:`Ritmo regular, sem onda P, QRS estreito, FC ${fc} bpm.`, k:"warn"}
-        : {t:"Considerar escape ventricular", d:`Ritmo regular, sem onda P, QRS largo, FC ${fc} bpm.`, k:"bad"};
-      partes.push(ins(res.k, res.t, res.d));
-      return fim(res);
+      return resultado(r.qrs === "estreito" ? {t:"Considerar escape juncional", d:`Ritmo regular, sem onda P, QRS estreito, FC ${fc} bpm.`, k:"warn"}
+        : {t:"Considerar escape ventricular", d:`Ritmo regular, sem onda P, QRS largo, FC ${fc} bpm.`, k:"bad"});
     }
-    q("P e QRS têm relação?");
-    partes.push(`<div class="opts">${opt("rel","nao","Não")}${opt("rel","algumas","Sim, mas algumas P não conduzem")}${opt("rel","todas","Todas conduzem 1:1")}</div>`);
+    B.escolha("rel", {curto:"Relação P–QRS", titulo:"P e QRS têm relação?", opcoes:[["nao","Não"],["algumas","Sim, mas algumas P não conduzem","Algumas P não conduzem"],["todas","Todas conduzem 1:1"]]});
     if (!r.rel) return falta();
-    if (r.rel === "nao"){
-      const res = {t:"BAV total", d:"P e QRS sem relação entre si.", k:"bad"};
-      partes.push(ins(res.k, res.t, res.d));
-      return fim(res);
-    }
-    if (r.rel === "todas"){
-      const res = {t:"Considerar ritmo atrial ectópico", d:"P não sinusal com bradicardia, todas conduzindo 1:1.", k:"warn"};
-      partes.push(ins(res.k, res.t, res.d));
-      return fim(res);
-    }
-    q("Como as P deixam de conduzir?");
-    partes.push(`<div class="opts">${opt("bav","m1","PR aumenta progressivamente até uma P bloquear")}${opt("bav","m2","PR constante, até que uma P bloqueia")}${opt("bav","21","Condução 2:1")}${opt("bav","avancado","Duas ou mais P consecutivas não conduzidas")}</div>`);
+    if (r.rel === "nao") return resultado({t:"BAV total", d:"P e QRS sem relação entre si.", k:"bad"});
+    if (r.rel === "todas") return resultado({t:"Considerar ritmo atrial ectópico", d:"P não sinusal com bradicardia, todas conduzindo 1:1.", k:"warn"});
+    B.escolha("bav", {curto:"Como as P bloqueiam", titulo:"Como as P deixam de conduzir?", opcoes:[["m1","PR aumenta progressivamente até uma P bloquear","PR aumenta até bloquear"],["m2","PR constante, até que uma P bloqueia","PR constante, P bloqueia"],["21","Condução 2:1"],["avancado","Duas ou mais P consecutivas não conduzidas","2 ou mais P bloqueadas"]]});
     if (!r.bav) return falta();
     const res = {m1:{t:"BAV de 2º grau Mobitz I", k:"warn"}, m2:{t:"BAV de 2º grau Mobitz II", k:"bad"}, "21":{t:"BAV 2:1", k:"bad"}, avancado:{t:"BAV avançado", k:"bad"}}[r.bav];
     res.d = `FC ${fc} bpm.`;
-    partes.push(ins(res.k, res.t, res.d));
-    return fim(res);
+    return resultado(res);
   }
 
   if (reg === "irregular"){
-    q("Você identifica ondas P individualizadas?");
-    partes.push(`<div class="opts">${opt("pind","nao","Não")}${opt("pind","sim","Sim")}</div>`);
+    B.escolha("pind", {curto:"Ondas P individualizadas", titulo:"Você identifica ondas P individualizadas?", opcoes:SN});
     if (!r.pind) return falta();
-    const res = r.pind === "nao" ? {t:"Padrão compatível com fibrilação atrial", d:`Ritmo irregular, sem ondas P individualizadas, FC ${fc} bpm.`, k:"warn"}
-      : {t:"Ritmo irregular com atividade atrial identificável", d:"Considere extrassístoles atriais frequentes ou atividade atrial multifocal.", k:"warn"};
-    partes.push(ins(res.k, res.t, res.d));
-    return fim(res);
+    return resultado(r.pind === "nao" ? {t:"Padrão compatível com fibrilação atrial", d:`Ritmo irregular, sem ondas P individualizadas, FC ${fc} bpm.`, k:"warn"}
+      : {t:"Ritmo irregular com atividade atrial identificável", d:"Considere extrassístoles atriais frequentes ou atividade atrial multifocal.", k:"warn"});
   }
-  q("Você identifica ondas P não sinusais?");
-  partes.push(`<div class="opts">${opt("pns","sim","Sim")}${opt("pns","nao","Não")}</div>`);
+  B.escolha("pns", {curto:"Ondas P não sinusais", titulo:"Você identifica ondas P não sinusais?", opcoes:[["sim","Sim"],["nao","Não"]]});
   if (!r.pns) return falta();
-  if (r.pns === "sim"){
-    const res = {t:"Considerar ritmo atrial ectópico", d:`FC ${fc} bpm.`, k:"warn"};
-    partes.push(ins(res.k, res.t, res.d));
-    return fim(res);
-  }
+  if (r.pns === "sim") return resultado({t:"Considerar ritmo atrial ectópico", d:`FC ${fc} bpm.`, k:"warn"});
   if (!perguntaQRS()) return falta();
-  const res = r.qrs === "estreito" ? {t:"Considerar ritmo juncional", d:`QRS estreito, FC ${fc} bpm.`, k:"warn"}
-    : {t:"Considerar ritmo idioventricular", d:`QRS largo, FC ${fc} bpm.`, k:"warn"};
-  partes.push(ins(res.k, res.t, res.d));
-  return fim(res);
+  return resultado(r.qrs === "estreito" ? {t:"Considerar ritmo juncional", d:`QRS estreito, FC ${fc} bpm.`, k:"warn"}
+    : {t:"Considerar ritmo idioventricular", d:`QRS largo, FC ${fc} bpm.`, k:"warn"});
 }
 
 const PADROES = [["wellens","Padrão de Wellens"],["dewinter","Padrão de de Winter"],["aslanger","Padrão de Aslanger"],["avr","Infra difuso de ST + supra em aVR"],["hiper","Ondas T hiperagudas"]];
@@ -676,7 +631,7 @@ function opt(chave, valor, rotulo, multi){
   const on = multi ? (atual || []).includes(valor) : atual === valor;
   return `<button type="button" class="opt${multi ? " multi" : ""}" data-ans="${chave}" data-val="${valor}" data-multi="${multi ? 1 : 0}" aria-pressed="${on}"><span>${rotulo}</span></button>`;
 }
-function ins(k, t, d){ return `<div class="ins ${k}"><strong>${t}</strong>${d ? `<p>${d}</p>` : ""}</div>`; }
+function ins(k, t, d){ return `<div class="ins ${k}${k === "ok" && !d ? " mini" : ""}"><strong>${t}</strong>${d ? `<p>${d}</p>` : ""}</div>`; }
 function campo(k, rotulo, unidade){ return `<div class="field"><label for="n-${k}">${rotulo}</label><div class="linha"><input type="number" id="n-${k}" inputmode="decimal" step="0.5" min="0" value="${R()[k] ?? ""}" data-num="${k}"><span class="u">${unidade}</span></div></div>`; }
 const terrHTML = () => `<div class="terr">${TERR.map(([, b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div>`;
 function pendente(o){ return `<div class="pendente"><span class="tag">a enviar</span> ${o}</div>`; }
@@ -1046,251 +1001,312 @@ function telaVer(){
   ${visorHTML("tudo", "Arraste para mover, pince para aproximar.")}</div>`;
 }
 
+/* ---------- blocos de etapa: pergunta em foco ----------
+   Cada etapa devolve uma lista de blocos em ordem. Pergunta respondida recolhe para uma linha,
+   a primeira sem resposta fica aberta, as seguintes esperam a vez. */
+function Blocos(){
+  const L = [], p = (t, chave, o) => L.push(Object.assign({t, chave}, o));
+  return { L,
+    texto:html => L.push({t:"texto", html}),          // sempre visível
+    html:html => L.push({t:"html", html}),            // visível quando nenhuma pergunta antes dele está pendente
+    res:(k, titulo, d) => L.push({t:"res", k, titulo, d}),
+    escolha:(chave, o) => p("escolha", chave, o), multi:(chave, o) => p("multi", chave, o), medida:(chave, o) => p("medida", chave, o) };
+}
+const NULO = {L:[], texto(){}, html(){}, res(){}, escolha(){}, multi(){}, medida(){}};
+const ehPergunta = b => b.t === "escolha" || b.t === "multi" || b.t === "medida";
+function feita(b){
+  if (S.editando === b.chave) return false;
+  const v = R()[b.chave], conf = !!S.cur.conf[b.chave];
+  if (b.t === "escolha") return v != null && (!(b.pendentes || []).includes(v) || conf);
+  if (b.t === "multi") return conf && (!!b.permiteVazio || (v || []).length > 0);
+  return conf;
+}
+function valorCurto(b){
+  if (b.t === "medida") return b.resumo();
+  const nome = x => { const o = b.opcoes.find(o => o[0] === x); return o ? (o[2] || o[1]) : x; };
+  const v = R()[b.chave];
+  if (b.t === "multi") return (v || []).length ? v.map(nome).join(" · ") : (b.vazio || "nenhum");
+  return nome(v);
+}
+function blocoAtivo(b){
+  let corpo = "";
+  if (b.t === "escolha") corpo = `<div class="opts">${b.opcoes.map(([v, l]) => opt(b.chave, v, l)).join("")}</div>`;
+  if (b.t === "multi") corpo = `<div class="opts">${b.opcoesHtml || b.opcoes.map(([v, l]) => opt(b.chave, v, l, true)).join("")}</div>
+    <button class="btn small conf" type="button" data-conf="${b.chave}" ${(R()[b.chave] || []).length || b.permiteVazio ? "" : "disabled"}>Continuar ${I.seta}</button>`;
+  if (b.t === "medida") corpo = b.corpo() + `<button class="btn small conf" type="button" data-conf="${b.chave}" ${b.pronta() ? "" : "disabled"}><span data-conf-rot>${b.rotuloConf()}</span> ${I.check}</button>`;
+  return `<section class="qb ativa" data-q="${b.chave}">
+    ${b.sec ? `<div class="sec"><h3>${b.sec}</h3></div>` : ""}${b.antes || ""}
+    ${b.titulo ? `<p class="q${b.grande ? "" : " sm"}">${b.titulo}</p>` : ""}${b.dica ? `<p class="tiny mute">${b.dica}</p>` : ""}${b.meio || ""}
+    ${corpo}${b.depois || ""}</section>`;
+}
+function renderBlocos(L){
+  let ativa = null, h = "";
+  L.forEach(b => {
+    if (b.t === "texto"){ h += b.html; return; }
+    if (!ehPergunta(b)){ if (!ativa) h += b.t === "res" ? ins(b.k, b.titulo, b.d) : b.html; return; }
+    if (feita(b)){ h += `<button type="button" class="qb feita" data-editar="${b.chave}"><span class="ck">${I.check}</span><span class="rot">${b.curto}</span><b>${valorCurto(b)}</b></button>`; return; }
+    if (ativa){ h += `<div class="qb futura"><span class="ck"></span><span class="rot">${b.curto}</span></div>`; return; }
+    ativa = b; h += blocoAtivo(b);
+  });
+  S._ativa = ativa;
+  return {html:h, temAtiva:!!ativa};
+}
+function atualizarConf(){
+  const b = S._ativa; if (!b || b.t !== "medida") return;
+  const btn = app.querySelector(`[data-conf="${b.chave}"]`); if (!btn) return;
+  btn.disabled = !b.pronta(); btn.querySelector("[data-conf-rot]").textContent = b.rotuloConf();
+}
+
 /* ---------- etapas 2 a 8 ---------- */
+const SIMNAO = [["sim","Sim"],["nao","Não"]];
+const POL = [["pos","Predominantemente positivo","Positivo"],["neg","Predominantemente negativo","Negativo"]];
+const numBR = v => String(v).replace(".", ",");
 const ETAPAS = {
   2: () => {
-    const r = R(), cal = r.vel && r.amp, calOk = calibPadrao();
-    let h = `<p class="small mute">Vamos confirmar rapidamente se o traçado é adequado para interpretação.</p>
-    <div class="sec"><h3>2.1 — Calibração</h3></div><p class="small ink2">Confira a calibração impressa no ECG.</p>
-    <span class="eyebrow">Velocidade</span><div class="opts">${opt("vel","25","25 mm/s")}${opt("vel","outra","Outra / não sei")}</div>
-    <span class="eyebrow">Amplitude</span><div class="opts">${opt("amp","10","10 mm/mV")}${opt("amp","outra","Outra / não sei")}</div>
-    ${ajuda("ondecal", "Onde encontro isso?")}
-    ${S.aberto.ondecal ? `<div class="helpbox">${pendente("Foto padrão de um ECG mostrando onde ficam a velocidade e a amplitude impressas")}</div>` : ""}`;
-    if (cal){
-      h += calOk ? ins("ok", "Calibração padrão", "")
-        : ins("warn", "Atenção à calibração", "Este ECG não foi confirmado em 25 mm/s e 10 mm/mV. Isso modifica a relação entre os quadrados do papel e o tempo. Sugiro repetir o ECG.") + `<div class="opts">${opt("calSeguir","sim","Continuar mesmo assim")}</div>`;
+    const r = R(), B = Blocos();
+    B.texto(`<p class="small mute">Vamos confirmar rapidamente se o traçado é adequado para interpretação.</p>`);
+    B.escolha("cal", {sec:"2.1 — Calibração", curto:"Calibração", antes:`<p class="small ink2">Confira a calibração impressa no ECG.</p>`,
+      titulo:"O ECG está em 25 mm/s e 10 mm/mV?", opcoes:[["padrao","Sim — 25 mm/s e 10 mm/mV","25 mm/s · 10 mm/mV"],["outra","Outra / não sei"]],
+      depois:ajuda("ondecal", "Onde encontro isso?") + (S.aberto.ondecal ? `<div class="helpbox">${pendente("Foto padrão de um ECG mostrando onde ficam a velocidade e a amplitude impressas")}</div>` : "")});
+    if (r.cal === "padrao") B.res("ok", "Calibração padrão", "");
+    if (r.cal === "outra"){
+      B.res("warn", "Atenção à calibração", "Este ECG não foi confirmado em 25 mm/s e 10 mm/mV. Isso modifica a relação entre os quadrados do papel e o tempo. Sugiro repetir o ECG.");
+      B.escolha("calSeguir", {curto:"Calibração fora do padrão", opcoes:[["sim","Continuar mesmo assim"]]});
     }
-    if (cal && (calOk || r.calSeguir)){
-      h += `<div class="sec"><h3>2.2 — Eletrodos dos membros</h3></div>
-      <div class="crit"><p>DI com onda P positiva e/ou QRS predominantemente positivo</p><p>aVR com onda P negativa e/ou QRS predominantemente negativo</p></div>
-      <p class="q sm">O traçado está assim?</p>
-      <div class="opts">${opt("elet","sim","Sim")}${opt("elet","nao","Não")}</div>`;
-      if (r.elet === "sim") h += ins("ok", "Padrão habitual das derivações dos membros", "");
+    if (calibPadrao() || r.calSeguir){
+      B.escolha("elet", {sec:"2.2 — Eletrodos dos membros", curto:"Eletrodos dos membros",
+        antes:`<div class="crit"><p>DI com onda P positiva e/ou QRS predominantemente positivo</p><p>aVR com onda P negativa e/ou QRS predominantemente negativo</p></div>`,
+        titulo:"O traçado está assim?", opcoes:SIMNAO});
+      if (r.elet === "sim") B.res("ok", "Padrão habitual das derivações dos membros", "");
       if (r.elet === "nao"){
-        h += ins("warn", "Antes de interpretar, considere possível troca de eletrodos", "Quando onda P e QRS estão negativos em DI e positivos em aVR, suspeite especialmente de inversão dos eletrodos dos braços. Entretanto, alterações isoladas da polaridade do QRS podem representar o próprio padrão do paciente.");
-        h += ajuda("eletajuda", "Me ajude a conferir os eletrodos");
-        if (S.aberto.eletajuda) h += `<div class="helpbox"><p>Confira a posição dos eletrodos dos membros e, se houver suspeita de inversão, corrija a posição e repita o ECG antes de interpretar, sempre que possível.</p>${pendente("Imagem com a colocação correta dos eletrodos dos membros")}</div>`;
-        h += `<div class="opts">${opt("eletSeguir","sim","Seguir mesmo assim")}</div>`;
+        B.res("warn", "Antes de interpretar, considere possível troca de eletrodos", "Quando onda P e QRS estão negativos em DI e positivos em aVR, suspeite especialmente de inversão dos eletrodos dos braços. Entretanto, alterações isoladas da polaridade do QRS podem representar o próprio padrão do paciente.");
+        B.escolha("eletSeguir", {curto:"Possível troca de eletrodos", opcoes:[["sim","Seguir mesmo assim"]],
+          antes:ajuda("eletajuda", "Me ajude a conferir os eletrodos") + (S.aberto.eletajuda ? `<div class="helpbox"><p>Confira a posição dos eletrodos dos membros e, se houver suspeita de inversão, corrija a posição e repita o ECG antes de interpretar, sempre que possível.</p>${pendente("Imagem com a colocação correta dos eletrodos dos membros")}</div>` : "")});
       }
     }
-    return {html:h, ok:() => !!(R().vel && R().amp && (calibPadrao() || R().calSeguir) && (R().elet === "sim" || (R().elet === "nao" && R().eletSeguir)))};
+    return {blocos:B.L, ok:() => !!(R().cal && (calibPadrao() || R().calSeguir) && (R().elet === "sim" || (R().elet === "nao" && R().eletSeguir)))};
   },
   3: () => {
-    const r = R();
-    let h = `<p class="q">O ritmo é sinusal?</p>
-    <div class="crit"><p>P positiva em DI, DII e aVF</p><p>P negativa em aVR</p><p>Ondas P precedem os QRS do ritmo de base</p><p>Ondas P com a mesma morfologia em uma mesma derivação</p></div>
-    <div class="opts">${opt("ritmo","sim","Sim")}${opt("ritmo","nao","Não")}${opt("ritmo","duvida","Não tenho certeza")}</div>`;
-    if (r.ritmo === "sim") h += ins("ok", "Ritmo sinusal", "");
-    if (r.ritmo === "nao") h += ins("warn", "O ritmo não apresenta todos os critérios de ritmo sinusal", "Continue a sequência. Na etapa Descarte de arritmias, vamos caracterizá-lo melhor.");
+    const r = R(), B = Blocos();
+    B.escolha("ritmo", {grande:true, curto:"Ritmo sinusal?", titulo:"O ritmo é sinusal?",
+      meio:`<div class="crit"><p>P positiva em DI, DII e aVF</p><p>P negativa em aVR</p><p>Ondas P precedem os QRS do ritmo de base</p><p>Ondas P com a mesma morfologia em uma mesma derivação</p></div>`,
+      opcoes:[["sim","Sim"],["nao","Não"],["duvida","Não tenho certeza"]]});
+    if (r.ritmo === "sim") B.res("ok", "Ritmo sinusal", "");
+    if (r.ritmo === "nao") B.res("warn", "O ritmo não apresenta todos os critérios de ritmo sinusal", "Continue a sequência. Na etapa Descarte de arritmias, vamos caracterizá-lo melhor.");
     if (r.ritmo === "duvida"){
-      h += `<div class="card"><span class="eyebrow">Como identificar o ritmo sinusal</span>
-        <h3>1. Primeiro, encontre a onda P</h3><p class="small ink2">DII costuma ser uma boa derivação para começar.</p>${pendente("Imagem de um ECG sinusal destacando apenas a P em DII")}
-        <div class="opts">${opt("wiz1","sim","Encontrei a onda P")}${opt("wiz1","nao","Não encontrei")}</div>`;
-      if (r.wiz1 === "nao") h += ins("warn", "Sem uma onda P claramente identificável, o ritmo não é sinusal", "Continue a sequência. Vamos caracterizar melhor o ritmo em Descarte de arritmias.");
+      const NAO_CONFERE = ["warn", "Os critérios de ritmo sinusal não estão todos presentes", "Não precisamos definir a arritmia agora. Continue a sequência: vamos caracterizar melhor o ritmo em Descarte de arritmias."];
+      B.escolha("wiz1", {curto:"Onda P", antes:`<span class="eyebrow">Como identificar o ritmo sinusal</span><h3>1. Primeiro, encontre a onda P</h3><p class="small ink2">DII costuma ser uma boa derivação para começar.</p>${pendente("Imagem de um ECG sinusal destacando apenas a P em DII")}`,
+        opcoes:[["sim","Encontrei a onda P","Encontrada"],["nao","Não encontrei","Não encontrada"]]});
+      if (r.wiz1 === "nao") B.res("warn", "Sem uma onda P claramente identificável, o ritmo não é sinusal", "Continue a sequência. Vamos caracterizar melhor o ritmo em Descarte de arritmias.");
       if (r.wiz1 === "sim"){
-        h += `<h3>2. Agora confira a polaridade da P</h3><p class="small ink2">Para uma onda P de origem sinusal, procure: positiva em DI, positiva em DII, positiva em aVF, negativa em aVR. Observe apenas se a onda P está predominantemente acima ou abaixo da linha de base.</p>${pendente("Imagem pequena com DI, DII, aVF e aVR mostrando a polaridade esperada da P")}
-          <div class="opts">${opt("wiz2","sim","Tem característica sinusal")}${opt("wiz2","nao","Não tem característica sinusal")}</div>`;
-        if (r.wiz2 === "nao") h += ins("warn", "Os critérios de ritmo sinusal não estão todos presentes", "Não precisamos definir a arritmia agora. Continue a sequência: vamos caracterizar melhor o ritmo em Descarte de arritmias.");
+        B.escolha("wiz2", {curto:"Polaridade da P", antes:`<h3>2. Agora confira a polaridade da P</h3><p class="small ink2">Para uma onda P de origem sinusal, procure: positiva em DI, positiva em DII, positiva em aVF, negativa em aVR. Observe apenas se a onda P está predominantemente acima ou abaixo da linha de base.</p>${pendente("Imagem pequena com DI, DII, aVF e aVR mostrando a polaridade esperada da P")}`,
+          opcoes:[["sim","Tem característica sinusal","Sinusal"],["nao","Não tem característica sinusal","Não sinusal"]]});
+        if (r.wiz2 === "nao") B.res(...NAO_CONFERE);
         if (r.wiz2 === "sim"){
-          h += `<h3>3. Olhe o ritmo de base</h3><p class="small ink2">As ondas P apresentam morfologia semelhante em uma mesma derivação e precedem os QRS do ritmo de base?</p><p class="tiny mute">Importante: um batimento diferente isolado, como uma extrassístole, não exclui necessariamente um ritmo de base sinusal.</p>
-            <div class="opts">${opt("wiz3","sim","Sim")}${opt("wiz3","nao","Não")}</div>`;
-          if (r.wiz3 === "sim") h += ins("ok", "Os achados são compatíveis com ritmo sinusal", "");
-          if (r.wiz3 === "nao") h += ins("warn", "Os critérios de ritmo sinusal não estão todos presentes", "Não precisamos definir a arritmia agora. Continue a sequência: vamos caracterizar melhor o ritmo em Descarte de arritmias.");
+          B.escolha("wiz3", {curto:"Ritmo de base", antes:`<h3>3. Olhe o ritmo de base</h3><p class="small ink2">As ondas P apresentam morfologia semelhante em uma mesma derivação e precedem os QRS do ritmo de base?</p><p class="tiny mute">Importante: um batimento diferente isolado, como uma extrassístole, não exclui necessariamente um ritmo de base sinusal.</p>`, opcoes:SIMNAO});
+          if (r.wiz3 === "sim") B.res("ok", "Os achados são compatíveis com ritmo sinusal", "");
+          if (r.wiz3 === "nao") B.res(...NAO_CONFERE);
         }
       }
-      h += `</div>`;
     }
-    return {html:h, ok:() => sinusal() !== null};
+    return {blocos:B.L, ok:() => sinusal() !== null};
   },
   4: () => {
-    const r = R();
-    let h = `<div class="sec"><h3>4.1 — Regularidade</h3></div><p class="q sm">O ritmo é regular?</p><p class="tiny mute">Compare os intervalos R-R ao longo do traçado.</p>
-    <div class="opts">${opt("reg","regular","Regular")}${opt("reg","irregular","Irregular")}</div>`;
-    if (r.reg){
-      h += `<div class="sec"><h3>4.2 — Frequência cardíaca</h3></div>
-      <div class="field"><label for="fc">Qual a frequência cardíaca?</label><div class="linha"><input type="number" id="fc" inputmode="numeric" min="10" max="350" value="${r.fc || ""}" placeholder="—"><span class="u">bpm</span></div></div>
-      ${ajuda("calcfc", "Me ajude a calcular a FC")}`;
-      if (S.aberto.calcfc){
-        const calc = (id, rot, fator, tipo) => `<div class="calc"><label for="${id}">${rot}</label><div class="linha"><input type="number" id="${id}" inputmode="decimal" min="0" step="0.5" value="${r[id] || ""}" data-calc="${tipo}" data-fator="${fator}"><span class="res" id="${id}-res">—</span><button class="btn small" type="button" data-usar-calc="${id}">Usar</button></div></div>`;
-        h += `<div class="helpbox">`;
-        if (r.reg === "regular"){
-          h += `<p><b>1. Quadradinhos pequenos.</b> Conte quantos quadradinhos pequenos existem entre dois QRS consecutivos. FC = 1500 ÷ quadradinhos.</p>${calc("cq","Quadradinhos entre dois QRS",1500,"div")}
+    const r = R(), B = Blocos();
+    B.escolha("reg", {sec:"4.1 — Regularidade", curto:"Regularidade", titulo:"O ritmo é regular?", dica:"Compare os intervalos R-R ao longo do traçado.", opcoes:[["regular","Regular"],["irregular","Irregular"]]});
+    if (r.reg) B.medida("fc", {sec:"4.2 — Frequência cardíaca", curto:"Frequência cardíaca",
+      pronta:() => !!R().fc, rotuloConf:() => R().fc ? `Confirmar · ${R().fc} bpm` : "Confirmar",
+      resumo:() => `${R().fc} bpm${R().reg === "irregular" ? " · média" : ""}`,
+      corpo:() => {
+        let h = `<div class="field"><label for="fc">Qual a frequência cardíaca?</label><div class="linha"><input type="number" id="fc" inputmode="numeric" min="10" max="350" value="${r.fc || ""}" placeholder="—"><span class="u">bpm</span></div></div>
+          ${ajuda("calcfc", "Me ajude a calcular a FC")}`;
+        if (S.aberto.calcfc){
+          const calc = (id, rot, fator, tipo) => `<div class="calc"><label for="${id}">${rot}</label><div class="linha"><input type="number" id="${id}" inputmode="decimal" min="0" step="0.5" value="${r[id] || ""}" data-calc="${tipo}" data-fator="${fator}"><span class="res" id="${id}-res">—</span><button class="btn small" type="button" data-usar-calc="${id}">Usar</button></div></div>`;
+          h += `<div class="helpbox">`;
+          if (r.reg === "regular") h += `<p><b>1. Quadradinhos pequenos.</b> Conte quantos quadradinhos pequenos existem entre dois QRS consecutivos. FC = 1500 ÷ quadradinhos.</p>${calc("cq","Quadradinhos entre dois QRS",1500,"div")}
             <p><b>2. Quadrados grandes.</b> Conte quantos quadrados grandes existem entre dois QRS consecutivos. FC = 300 ÷ quadrados grandes.</p>${calc("cg","Quadrados grandes entre dois QRS",300,"div")}`;
+          h += `<p><b>${r.reg === "regular" ? "3. " : ""}Contagem em 10 segundos.</b> Em um trecho contínuo de 10 segundos, como o DII longo, conte o número de QRS. FC ${r.reg === "irregular" ? "média " : ""}= QRS × 6.</p>${calc("c10","QRS em 10 segundos",6,"mul")}`;
+          if (r.reg === "regular" && S.cur.tela) h += `<p><b>4. Régua na foto.</b> Meça a distância entre dois QRS na própria foto.</p><button class="btn small" type="button" data-medir="fc">${I.regua}Medir na foto</button>`;
+          h += `</div>`;
         }
-        h += `<p><b>${r.reg === "regular" ? "3. " : ""}Contagem em 10 segundos.</b> Em um trecho contínuo de 10 segundos, como o DII longo, conte o número de QRS. FC ${r.reg === "irregular" ? "média " : ""}= QRS × 6.</p>${calc("c10","QRS em 10 segundos",6,"mul")}`;
-        if (r.reg === "regular" && S.cur.tela) h += `<p><b>4. Régua na foto.</b> Meça a distância entre dois QRS na própria foto.</p><button class="btn small" type="button" data-medir="fc">${I.regua}Medir na foto</button>`;
-        h += `</div>`;
-      }
-      if (r.fc) h += ins("ok", "FC registrada: " + r.fc + " bpm", r.reg === "irregular" ? "Frequência média estimada." : "");
-    }
-    return {html:h, ok:() => !!(R().reg && R().fc)};
+        return h;
+      }});
+    if (r.fc) B.res("ok", "FC registrada: " + r.fc + " bpm", r.reg === "irregular" ? "Frequência média estimada." : "");
+    return {blocos:B.L, ok:() => !!(R().reg && R().fc)};
   },
   5: () => {
-    const r = R(), e = eixo();
-    let h = `<div class="sec"><h3>5.1 — Como é o QRS em DI?</h3></div><div class="opts">${opt("di","pos","Predominantemente positivo")}${opt("di","neg","Predominantemente negativo")}</div>
-    <div class="sec"><h3>5.2 — Como é o QRS em aVF?</h3></div><div class="opts">${opt("avf","pos","Predominantemente positivo")}${opt("avf","neg","Predominantemente negativo")}</div>
-    ${ajuda("polqrs", "Me ajude a saber se o QRS é positivo ou negativo")}`;
-    if (S.aberto.polqrs){
-      h += `<div class="helpbox"><p>Observe o QRS em relação à linha de base.</p><p><b>Predominantemente positivo</b> → a maior parte do QRS está acima da linha de base.</p><p><b>Predominantemente negativo</b> → a maior parte do QRS está abaixo da linha de base.</p>
+    const r = R(), e = eixo(), B = Blocos();
+    const ajudaPol = ajuda("polqrs", "Me ajude a saber se o QRS é positivo ou negativo") + (S.aberto.polqrs ? `<div class="helpbox"><p>Observe o QRS em relação à linha de base.</p><p><b>Predominantemente positivo</b> → a maior parte do QRS está acima da linha de base.</p><p><b>Predominantemente negativo</b> → a maior parte do QRS está abaixo da linha de base.</p>
         <div class="figs"><figure>${qrsFig("ralto")}<figcaption>R alto</figcaption></figure><figure>${qrsFig("qr")}<figcaption>qR</figcaption></figure><figure>${qrsFig("qs")}<figcaption>QS</figcaption></figure><figure>${qrsFig("rs")}<figcaption>rS</figcaption></figure></div>
-        <p class="tiny mute">Os dois primeiros são positivos; os dois últimos, negativos. Desenho esquemático, a validar pelo Dr. Vitor.</p></div>`;
-    }
-    if (r.di === "pos" && r.avf === "neg"){
-      h += `<div class="sec"><h3>Agora observe DII</h3></div><p class="q sm">Como é o QRS em DII?</p><div class="opts">${opt("dii","pos","Predominantemente positivo")}${opt("dii","neg","Predominantemente negativo")}</div>`;
-    }
-    if (e) h += ins(e.k, e.t, "");
-    return {html:h, ok:() => !!eixo()};
+        <p class="tiny mute">Os dois primeiros são positivos; os dois últimos, negativos. Desenho esquemático, a validar pelo Dr. Vitor.</p></div>` : "");
+    B.escolha("di", {sec:"5.1 — Como é o QRS em DI?", curto:"QRS em DI", opcoes:POL, depois:ajudaPol});
+    B.escolha("avf", {sec:"5.2 — Como é o QRS em aVF?", curto:"QRS em aVF", opcoes:POL, depois:ajudaPol});
+    if (r.di === "pos" && r.avf === "neg") B.escolha("dii", {sec:"Agora observe DII", curto:"QRS em DII", titulo:"Como é o QRS em DII?", opcoes:POL, depois:ajudaPol});
+    if (e) B.res(e.k, e.t, "");
+    return {blocos:B.L, ok:() => !!eixo()};
   },
   6: () => {
-    const a = arritmia();
-    return {html:`<p class="small mute">O Copiloto já sabe o ritmo, a regularidade e a frequência. Ele parte daí e só pergunta o que falta.</p>` + a.html, ok:() => arritmia().pronto};
+    const B = Blocos();
+    B.texto(`<p class="small mute">O Copiloto já sabe o ritmo, a regularidade e a frequência. Ele parte daí e só pergunta o que falta.</p>`);
+    arritmia(B);
+    return {blocos:B.L, ok:() => arritmia().pronto};
   },
   7: () => {
-    const r = R(), m = r.isq || [];
-    let h = `<div class="sec"><h3>Antes de procurar alterações, pense em territórios</h3></div>
-    <p class="small ink2">Não analise uma derivação isoladamente. Procure alterações em derivações anatomicamente contíguas.</p>
-    <div class="terr">${TERR.map(([, b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div>
-    <p class="q sm">Você identifica alguma destas alterações em pelo menos duas derivações contíguas?</p>
-    <div class="opts">${opt("isq","supra","Supradesnivelamento do segmento ST",true)}${opt("isq","infra","Infradesnivelamento do segmento ST",true)}${opt("isq","tinv","Inversão simétrica da onda T",true)}${opt("isq","nenhuma","Nenhuma dessas alterações",true)}</div>
-    ${ajuda("critsupra", "Me ajude a revisar os critérios de supra")}
-    ${S.aberto.critsupra ? `<div class="helpbox">${pendente("Critérios de supra de ST por derivação, sexo e idade")}</div>` : ""}`;
+    const r = R(), m = r.isq || [], B = Blocos();
+    B.multi("isq", {curto:"Alterações em derivações contíguas",
+      antes:`<div class="sec"><h3>Antes de procurar alterações, pense em territórios</h3></div><p class="small ink2">Não analise uma derivação isoladamente. Procure alterações em derivações anatomicamente contíguas.</p>${terrHTML()}`,
+      titulo:"Você identifica alguma destas alterações em pelo menos duas derivações contíguas?",
+      opcoes:[["supra","Supradesnivelamento do segmento ST","Supra de ST"],["infra","Infradesnivelamento do segmento ST","Infra de ST"],["tinv","Inversão simétrica da onda T","T invertida simétrica"],["nenhuma","Nenhuma dessas alterações","Nenhuma"]],
+      depois:ajuda("critsupra", "Me ajude a revisar os critérios de supra") + (S.aberto.critsupra ? `<div class="helpbox">${pendente("Critérios de supra de ST por derivação, sexo e idade")}</div>` : "")});
     if (m.includes("supra")){
-      h += `<p class="q sm">O supradesnivelamento de ST apresenta distribuição em derivações anatomicamente contíguas compatível com um território coronariano?</p>
-      <div class="opts">${opt("supraDist","sim","Sim")}${opt("supraDist","difuso","Não — o supra parece difuso")}${opt("supraDist","naosei","Não sei")}</div>`;
-      if (r.supraDist === "sim") h += ins("bad", "Supradesnivelamento de ST em quais derivações?", "") + `<div class="opts">${TERR.map(([k, b, s]) => opt("terr", k, b + " · " + s, true)).join("")}</div>`;
-      if (r.supraDist === "difuso") h += ins("warn", "Supradesnivelamento difuso de ST", "Quando o supra não apresenta distribuição territorial coronariana, considere pericardite aguda entre os diagnósticos diferenciais.");
-      if (r.supraDist === "naosei") h += `<div class="helpbox"><p>Não analise uma derivação isoladamente. Procure alterações em derivações anatomicamente contíguas.</p>${terrHTML()}<p class="tiny mute">Depois de conferir, responda de novo acima.</p></div>`;
+      B.escolha("supraDist", {curto:"Distribuição do supra", titulo:"O supradesnivelamento de ST apresenta distribuição em derivações anatomicamente contíguas compatível com um território coronariano?",
+        opcoes:[["sim","Sim","Territorial"],["difuso","Não — o supra parece difuso","Difuso"],["naosei","Não sei"]], pendentes:["naosei"],
+        depois:r.supraDist === "naosei" ? `<div class="helpbox"><p>Não analise uma derivação isoladamente. Procure alterações em derivações anatomicamente contíguas.</p>${terrHTML()}<p class="tiny mute">Depois de conferir, responda de novo acima.</p></div>` : ""});
+      if (r.supraDist === "sim") B.multi("terr", {curto:"Território do supra", antes:ins("bad", "Supradesnivelamento de ST em quais derivações?", ""), opcoes:TERR.map(([k, b, s]) => [k, b + " · " + s, b])});
+      if (r.supraDist === "difuso") B.res("warn", "Supradesnivelamento difuso de ST", "Quando o supra não apresenta distribuição territorial coronariana, considere pericardite aguda entre os diagnósticos diferenciais.");
     }
     if (m.includes("infra")){
-      h += ins("warn", "Infradesnivelamento de ST em derivações contíguas", "") + `<p class="q sm">Infra predominante em V1–V3?</p><div class="opts">${opt("infraV1","sim","Sim")}${opt("infraV1","nao","Não")}</div>`;
-      if (r.infraV1 === "sim") h += ins("bad", "Lembre-se de considerar infarto com supra posterior", "Avalie as derivações posteriores (V7–V9).");
-      if (r.infraV1 === "nao") h += ins("warn", "Pode representar isquemia subendocárdica", "Dependendo da morfologia e do contexto clínico.");
+      B.res("warn", "Infradesnivelamento de ST em derivações contíguas", "");
+      B.escolha("infraV1", {curto:"Infra em V1–V3", titulo:"Infra predominante em V1–V3?", opcoes:SIMNAO});
+      if (r.infraV1 === "sim") B.res("bad", "Lembre-se de considerar infarto com supra posterior", "Avalie as derivações posteriores (V7–V9).");
+      if (r.infraV1 === "nao") B.res("warn", "Pode representar isquemia subendocárdica", "Dependendo da morfologia e do contexto clínico.");
     }
-    if (m.includes("tinv")) h += ins("warn", "Ondas T invertidas e simétricas em derivações contíguas", "Avalie distribuição, profundidade, comparação com ECG prévio e contexto clínico.");
+    if (m.includes("tinv")) B.res("warn", "Ondas T invertidas e simétricas em derivações contíguas", "Avalie distribuição, profundidade, comparação com ECG prévio e contexto clínico.");
     if (m.includes("nenhuma")){
-      h += `<div class="sec"><h3>Antes de seguir, procure padrões de alto risco</h3></div><p class="small ink2">Faça uma última checagem:</p>
-        <div class="opts">${PADROES.map(([k,l]) => opt("padroes", k, l, true)).join("")}${opt("padroes","nenhum","Nenhum desses padrões",true)}</div>
-        ${ajuda("padraoajuda", "Não sei identificar")}
-        ${S.aberto.padraoajuda ? `<div class="helpbox">${PADROES.map(([,l]) => pendente(l + ": imagem validada e 2 ou 3 características")).join("")}</div>` : ""}`;
+      B.multi("padroes", {sec:"Antes de seguir, procure padrões de alto risco", curto:"Padrões de alto risco", antes:`<p class="small ink2">Faça uma última checagem:</p>`,
+        opcoes:PADROES.map(([k, l]) => [k, l]).concat([["nenhum","Nenhum desses padrões","Nenhum"]]),
+        depois:ajuda("padraoajuda", "Não sei identificar") + (S.aberto.padraoajuda ? `<div class="helpbox">${PADROES.map(([, l]) => pendente(l + ": imagem validada e 2 ou 3 características")).join("")}</div>` : "")});
       const p = r.padroes || [];
-      if (p.includes("nenhum")) h += ins("ok", "Nenhum padrão isquêmico evidente identificado nesta etapa", "");
-      else if (p.length) h += ins("bad", "Padrão de alto risco marcado", p.map(x => PADROES.find(y => y[0] === x)[1]).join(" · "));
+      if (p.includes("nenhum")) B.res("ok", "Nenhum padrão isquêmico evidente identificado nesta etapa", "");
+      else if (p.length) B.res("bad", "Padrão de alto risco marcado", p.map(x => PADROES.find(y => y[0] === x)[1]).join(" · "));
     }
-    return {html:h, ok:() => isquemia().pronto};
+    return {blocos:B.L, ok:() => isquemia().pronto};
   },
   8: () => {
-    const r = R(), largura = larguraQRS();
-    let h = `<div class="sec"><h3>8.1 — Duração do QRS</h3></div>`;
+    const r = R(), largura = larguraQRS(), B = Blocos();
+    const LARG = [["estreito","Estreito — menor que 120 ms","Estreito"],["largo","Largo — 120 ms ou mais","Largo"]];
     if (r.qrs){
-      h += ins("info", `QRS ${r.qrs} — já registrado na etapa de arritmias`, "O Copiloto usa a informação já armazenada e não pergunta de novo." + (r.qrsMs ? ` Medido na foto: ${r.qrsMs} ms.` : ""));
+      B.texto(`<div class="sec"><h3>8.1 — Duração do QRS</h3></div>`);
+      B.res("info", `QRS ${r.qrs} — já registrado na etapa de arritmias`, "O Copiloto usa a informação já armazenada e não pergunta de novo." + (r.qrsMs ? ` Medido na foto: ${r.qrsMs} ms.` : ""));
     } else {
-      h += `<p class="q sm">O QRS é estreito ou largo?</p><div class="opts">${opt("qrs8","estreito","Estreito — menor que 120 ms")}${opt("qrs8","largo","Largo — 120 ms ou mais")}</div>
-      ${ajuda("medirqrs8", "Não sei medir o QRS")}`;
-      if (S.aberto.medirqrs8) h += `<div class="helpbox"><p>Meça do início da primeira deflexão do QRS até o final da última deflexão.</p><p>Em velocidade de 25 mm/s, cada quadradinho corresponde a 40 ms. Portanto, <b>3 quadradinhos = 120 ms</b>.</p>${S.cur.tela ? `<button class="btn small" type="button" data-medir="qrs" data-chave="qrs8">${I.regua}Medir o QRS na foto</button>` : ""}${pendente("Imagem mostrando início e final do QRS")}</div>`;
-      if (r.qrs8) h += ins(r.qrs8 === "largo" ? "warn" : "ok", `QRS ${r.qrs8}`, r.qrsMs ? `${r.qrsMs} ms medidos na foto.` : "");
+      B.escolha("qrs8", {sec:"8.1 — Duração do QRS", curto:"Duração do QRS", titulo:"O QRS é estreito ou largo?", opcoes:LARG,
+        depois:ajuda("medirqrs8", "Não sei medir o QRS") + (S.aberto.medirqrs8 ? `<div class="helpbox"><p>Meça do início da primeira deflexão do QRS até o final da última deflexão.</p><p>Em velocidade de 25 mm/s, cada quadradinho corresponde a 40 ms. Portanto, <b>3 quadradinhos = 120 ms</b>.</p>${S.cur.tela ? `<button class="btn small" type="button" data-medir="qrs" data-chave="qrs8">${I.regua}Medir o QRS na foto</button>` : ""}${pendente("Imagem mostrando início e final do QRS")}</div>` : "")});
+      if (r.qrs8) B.res(r.qrs8 === "largo" ? "warn" : "ok", `QRS ${r.qrs8}`, r.qrsMs ? `${r.qrsMs} ms medidos na foto.` : "");
     }
     if (largura === "largo"){
-      h += `<div class="sec"><h3>8.2 — Avalie bloqueio de ramo</h3></div><p class="q sm">Observe V1. Qual padrão predomina?</p>
-      <div class="opts">${opt("v1","brd","rSR' / R' terminal positivo")}${opt("v1","bre","QRS predominantemente negativo")}${opt("v1","duvida","Não tenho certeza")}</div>`;
-      if (r.v1 === "brd") h += ins("warn", "Padrão compatível com BRD", "");
-      if (r.v1 === "bre") h += ins("warn", "Padrão compatível com BRE", "");
-      if (r.v1 === "duvida") h += `<div class="helpbox"><p>Compare V1: no <b>BRD</b> o QRS termina positivo (rSR' ou R' terminal); no <b>BRE</b> o QRS em V1 é predominantemente negativo.</p>${pendente("Imagem comparativa de V1 no BRD × V1 no BRE")}<p class="tiny mute">Se a dúvida continuar, o Copiloto registra "QRS largo, sem padrão típico de bloqueio de ramo definido" e segue.</p></div>`;
+      B.escolha("v1", {sec:"8.2 — Avalie bloqueio de ramo", curto:"Padrão em V1", titulo:"Observe V1. Qual padrão predomina?",
+        opcoes:[["brd","rSR' / R' terminal positivo","R' terminal positivo"],["bre","QRS predominantemente negativo","QRS negativo"],["duvida","Não tenho certeza","Sem certeza"]], pendentes:["duvida"],
+        depois:r.v1 === "duvida" ? `<div class="helpbox"><p>Compare V1: no <b>BRD</b> o QRS termina positivo (rSR' ou R' terminal); no <b>BRE</b> o QRS em V1 é predominantemente negativo.</p>${pendente("Imagem comparativa de V1 no BRD × V1 no BRE")}<p class="tiny mute">Se a dúvida continuar, o Copiloto registra "QRS largo, sem padrão típico de bloqueio de ramo definido" e segue.</p></div>
+          <button class="btn small conf" type="button" data-conf="v1">Seguir sem padrão definido ${I.seta}</button>` : ""});
+      if (r.v1 === "brd") B.res("warn", "Padrão compatível com BRD", "");
+      if (r.v1 === "bre") B.res("warn", "Padrão compatível com BRE", "");
+      if (r.v1 === "duvida") B.res("info", "QRS largo, sem padrão típico de bloqueio de ramo definido", "");
       const sg = sgarbossa();
       if (sg){
-        h += `<div class="sec"><h3>8.3 — BRE + suspeita de isquemia</h3></div>
-        ${ins("bad", "BRE + suspeita de isquemia", "O bloqueio de ramo esquerdo produz alterações secundárias do segmento ST e da onda T, que podem dificultar a identificação de isquemia. Vamos avaliar se existem critérios de Sgarbossa modificado.")}
-        <p class="q sm">1. Existe supra de ST ≥ 1 mm concordante com o QRS?</p><p class="tiny mute">Procure supradesnivelamento de ST em uma derivação cujo QRS seja predominantemente positivo.</p>
-        <div class="opts">${opt("sg1","sim","Sim")}${opt("sg1","nao","Não")}</div>
-        <p class="q sm">2. Existe infra de ST ≥ 1 mm em V1–V3?</p>
-        <div class="opts">${opt("sg2","sim","Sim")}${opt("sg2","nao","Não")}</div>
-        <p class="q sm">3. Existe supra de ST excessivo em V1–V3?</p><p class="tiny mute">Meça na derivação, de V1 a V3, com o maior supra.</p>
-        <div class="row2">${campo("sgST","Supra do ST no ponto J","mm")}${campo("sgS","Profundidade da onda S","mm")}</div>
-        <div class="kv"><span>Supra de ST ÷ profundidade da onda S</span><span id="sg-res">${sg.razao !== null ? sg.razao.toFixed(2).replace(".", ",") : "—"}</span></div>`;
-        if (sg.razao !== null) h += sg.c3 ? ins("bad", "Critério de discordância excessiva presente", "Razão de 0,25 ou mais.") : ins("ok", "Sem discordância excessiva", "Razão abaixo de 0,25.");
-        if (sg.pronto) h += sg.positivo ? ins("bad", "Critério de Sgarbossa modificado presente", "Em um paciente com quadro clínico compatível, este achado aumenta a suspeita de oclusão coronariana aguda.")
-          : ins("info", "Critérios de Sgarbossa modificado não identificados", "A ausência desses critérios não exclui síndrome coronariana aguda, mas reduz a probabilidade de oclusão coronariana aguda.");
+        B.html(`<div class="sec"><h3>8.3 — BRE + suspeita de isquemia</h3></div>` + ins("bad", "BRE + suspeita de isquemia", "O bloqueio de ramo esquerdo produz alterações secundárias do segmento ST e da onda T, que podem dificultar a identificação de isquemia. Vamos avaliar se existem critérios de Sgarbossa modificado."));
+        B.escolha("sg1", {curto:"Supra concordante ≥ 1 mm", titulo:"1. Existe supra de ST ≥ 1 mm concordante com o QRS?", dica:"Procure supradesnivelamento de ST em uma derivação cujo QRS seja predominantemente positivo.", opcoes:SIMNAO});
+        B.escolha("sg2", {curto:"Infra ≥ 1 mm em V1–V3", titulo:"2. Existe infra de ST ≥ 1 mm em V1–V3?", opcoes:SIMNAO});
+        B.medida("sg3", {curto:"Supra ÷ onda S", titulo:"3. Existe supra de ST excessivo em V1–V3?", dica:"Meça na derivação, de V1 a V3, com o maior supra.",
+          pronta:() => num("sgST") !== null && num("sgS") !== null,
+          rotuloConf:() => { const s = sgarbossa(); return s && s.razao !== null ? `Confirmar · razão ${s.razao.toFixed(2).replace(".", ",")}` : "Confirmar"; },
+          resumo:() => { const s = sgarbossa(); return `${numBR(num("sgST"))} ÷ ${numBR(num("sgS"))} mm${s && s.razao !== null ? " = " + s.razao.toFixed(2).replace(".", ",") : ""}`; },
+          corpo:() => `<div class="row2">${campo("sgST","Supra do ST no ponto J","mm")}${campo("sgS","Profundidade da onda S","mm")}</div>
+            <div class="kv"><span>Supra de ST ÷ profundidade da onda S</span><span id="sg-res">${sg.razao !== null ? sg.razao.toFixed(2).replace(".", ",") : "—"}</span></div>`});
+        if (sg.razao !== null) B.res(sg.c3 ? "bad" : "ok", sg.c3 ? "Critério de discordância excessiva presente" : "Sem discordância excessiva", sg.c3 ? "Razão de 0,25 ou mais." : "Razão abaixo de 0,25.");
+        if (sg.pronto) B.res(sg.positivo ? "bad" : "info", sg.positivo ? "Critério de Sgarbossa modificado presente" : "Critérios de Sgarbossa modificado não identificados",
+          sg.positivo ? "Em um paciente com quadro clínico compatível, este achado aumenta a suspeita de oclusão coronariana aguda." : "A ausência desses critérios não exclui síndrome coronariana aguda, mas reduz a probabilidade de oclusão coronariana aguda.");
       }
     }
     if (largura){
-      h += `<div class="sec"><h3>8.4 — Amplitude do QRS</h3></div><p class="q sm">Você identifica aumento significativo da amplitude do QRS?</p>
-      <div class="opts">${opt("amp8","nao","Não identifico aumento significativo da amplitude")}${opt("amp8","susp","Suspeito de aumento da amplitude")}${opt("amp8","naosei","Não sei avaliar")}</div>`;
+      B.escolha("amp8", {sec:"8.4 — Amplitude do QRS", curto:"Amplitude do QRS", titulo:"Você identifica aumento significativo da amplitude do QRS?",
+        opcoes:[["nao","Não identifico aumento significativo da amplitude","Sem aumento significativo"],["susp","Suspeito de aumento da amplitude","Suspeito de aumento"],["naosei","Não sei avaliar"]]});
       if (avaliouSobrecarga()){
         const v = svd(), sk = sokolow(), dir = eixoDireita();
-        h += `<div class="card"><span class="eyebrow">Vamos avaliar sobrecarga ventricular</span>
-          <h3>Sobrecarga ventricular direita</h3><p class="small ink2">Confira:</p>
-          <div class="opts">${opt("svd","v1pos","O QRS predomina positivo em V1",true)}<button type="button" class="opt multi fixo" aria-pressed="${dir}" disabled><span>Desvio do eixo para a direita <small class="mute">· ${dir ? "identificado" : "não identificado"} na etapa 5</small></span></button>${opt("svd","strainVD","Ondas T invertidas em V1–V3 (padrão de strain de VD)",true)}</div>
-          ${v.sugere ? ins("warn", "Achados que podem sugerir sobrecarga ventricular direita", v.itens.join(" · ") + ".") : ""}
-          <h3 style="margin-top:6px">Sobrecarga ventricular esquerda</h3><p class="small ink2">Vamos avaliar a voltagem. Meça:</p>
-          <div class="row2">${campo("sV1","Onda S em V1","mm")}${campo("rV56","Maior onda R entre V5 e V6","mm")}</div>
-          <div class="kv"><span>S em V1 + R em V5/V6</span><span id="sk-res">${sk ? String(sk.soma).replace(".", ",") + " mm" : "—"}</span></div>
-          ${sk ? (sk.presente ? ins("warn", "Critério de Sokolow-Lyon presente", "Aumento da voltagem ventricular esquerda: soma maior que 35 mm.") : ins("ok", "Critério de Sokolow-Lyon ausente", "Soma de 35 mm ou menos."))
-            + `<p class="q sm">Há alteração secundária da repolarização nas derivações laterais?</p><div class="opts">${opt("strainVE","sim","Sim — infra de ST associado a onda T negativa/assimétrica em V5–V6")}${opt("strainVE","nao","Não")}</div>${r.strainVE === "sim" ? ins("warn", "Padrão compatível com strain ventricular esquerdo", "") : ""}` : ""}
-        </div>`;
+        B.multi("svd", {curto:"Sobrecarga de VD", permiteVazio:true, vazio:"nenhum item marcado",
+          antes:`<span class="eyebrow">Vamos avaliar sobrecarga ventricular</span><h3>Sobrecarga ventricular direita</h3><p class="small ink2">Confira:</p>`,
+          opcoes:[["v1pos","O QRS predomina positivo em V1","QRS positivo em V1"],["strainVD","Ondas T invertidas em V1–V3 (padrão de strain de VD)","T invertidas em V1–V3"]],
+          opcoesHtml:`${opt("svd","v1pos","O QRS predomina positivo em V1",true)}<button type="button" class="opt multi fixo" aria-pressed="${dir}" disabled><span>Desvio do eixo para a direita <small class="mute">· ${dir ? "identificado" : "não identificado"} na etapa 5</small></span></button>${opt("svd","strainVD","Ondas T invertidas em V1–V3 (padrão de strain de VD)",true)}`});
+        if (v.sugere) B.res("warn", "Achados que podem sugerir sobrecarga ventricular direita", v.itens.join(" · ") + ".");
+        B.medida("sk", {curto:"Sokolow-Lyon", antes:`<h3>Sobrecarga ventricular esquerda</h3><p class="small ink2">Vamos avaliar a voltagem. Meça:</p>`,
+          pronta:() => !!sokolow(), rotuloConf:() => { const s = sokolow(); return s ? `Confirmar · ${numBR(s.soma)} mm` : "Confirmar"; },
+          resumo:() => { const s = sokolow(); return s ? `${numBR(s.soma)} mm` : "—"; },
+          corpo:() => `<div class="row2">${campo("sV1","Onda S em V1","mm")}${campo("rV56","Maior onda R entre V5 e V6","mm")}</div>
+            <div class="kv"><span>S em V1 + R em V5/V6</span><span id="sk-res">${sk ? numBR(sk.soma) + " mm" : "—"}</span></div>`});
+        if (sk){
+          B.res(sk.presente ? "warn" : "ok", sk.presente ? "Critério de Sokolow-Lyon presente" : "Critério de Sokolow-Lyon ausente", sk.presente ? "Aumento da voltagem ventricular esquerda: soma maior que 35 mm." : "Soma de 35 mm ou menos.");
+          B.escolha("strainVE", {curto:"Strain de VE", titulo:"Há alteração secundária da repolarização nas derivações laterais?", opcoes:[["sim","Sim — infra de ST associado a onda T negativa/assimétrica em V5–V6","Sim"],["nao","Não"]]});
+          if (r.strainVE === "sim") B.res("warn", "Padrão compatível com strain ventricular esquerdo", "");
+        }
       }
     }
-    return {html:h, ok:etapa8Pronta};
+    return {blocos:B.L, ok:etapa8Pronta};
   },
   9: () => {
-    const r = R(), q = qt(), largura = larguraQRS();
-    let h = `<p class="q">Meça o intervalo QT</p><p class="small ink2">Escolha uma derivação em que o final da onda T esteja bem definido.</p>
-    <div class="field"><label for="n-qtQuad">Quantos quadradinhos pequenos existem entre o início do QRS e o final da onda T?</label><div class="linha"><input type="number" id="n-qtQuad" inputmode="decimal" step="0.5" min="0" value="${r.qtQuad ?? ""}" data-num="qtQuad"><span class="u">quadradinhos</span></div></div>
-    ${ajuda("medirqt", "Não sei medir o QT")}`;
-    if (S.aberto.medirqt) h += `<div class="helpbox"><p>Meça do início do complexo QRS até o final da onda T.</p>${S.cur.tela ? `<button class="btn small" type="button" data-medir="qt">${I.regua}Medir o QT na foto</button>` : ""}${pendente("Imagem mostrando início do QRS → final da onda T")}</div>`;
-    h += `<div class="sec"><h3>9.1 — Sexo</h3></div><p class="tiny mute">Para interpretar o QT corrigido.</p><div class="opts">${opt("sexo","m","Masculino")}${opt("sexo","f","Feminino")}</div>
-    <div class="sec"><h3>9.2 — Cálculo automático</h3></div>
-    <div class="card"><div class="kv" style="border-top:0;padding-top:0"><span>FC (etapa 4)</span><span>${r.fc} bpm${r.reg === "irregular" ? " · média" : ""}</span></div><div class="kv"><span>QT medido</span><span id="qt-ms">${q ? q.qtMs + " ms" : "—"}</span></div>
+    const r = R(), q = qt(), largura = larguraQRS(), B = Blocos();
+    const quad = () => num("qtQuad");
+    B.medida("qtQuad", {grande:true, curto:"Intervalo QT", titulo:"Meça o intervalo QT", dica:"Escolha uma derivação em que o final da onda T esteja bem definido.",
+      pronta:() => quad() > 0, rotuloConf:() => quad() > 0 ? `Confirmar · ${numBR(quad())} quadradinhos (${Math.round(quad() * MS_POR_MM)} ms)` : "Confirmar",
+      resumo:() => `${numBR(quad())} quadradinhos · ${Math.round(quad() * MS_POR_MM)} ms`,
+      corpo:() => `<div class="field"><label for="n-qtQuad">Quantos quadradinhos pequenos existem entre o início do QRS e o final da onda T?</label><div class="linha"><input type="number" id="n-qtQuad" inputmode="decimal" step="0.5" min="0" value="${r.qtQuad ?? ""}" data-num="qtQuad"><span class="u">quadradinhos</span></div></div>
+        ${ajuda("medirqt", "Não sei medir o QT")}${S.aberto.medirqt ? `<div class="helpbox"><p>Meça do início do complexo QRS até o final da onda T.</p>${S.cur.tela ? `<button class="btn small" type="button" data-medir="qt">${I.regua}Medir o QT na foto</button>` : ""}${pendente("Imagem mostrando início do QRS → final da onda T")}</div>` : ""}`});
+    B.escolha("sexo", {sec:"9.1 — Sexo", curto:"Sexo", dica:"Para interpretar o QT corrigido.", opcoes:[["m","Masculino"],["f","Feminino"]]});
+    B.html(`<div class="sec"><h3>9.2 — Cálculo automático</h3></div>
+      <div class="card"><div class="kv" style="border-top:0;padding-top:0"><span>FC (etapa 4)</span><span>${r.fc} bpm${r.reg === "irregular" ? " · média" : ""}</span></div><div class="kv"><span>QT medido</span><span id="qt-ms">${q ? q.qtMs + " ms" : "—"}</span></div>
       <div class="readout" style="margin-top:8px"><span class="num"><span id="qt-res">${q ? q.qtc : "—"}</span><span class="u">ms · QTc (Bazett)</span></span>${q ? `<span class="tag ${q.classe === "normal" ? "ok" : "bad"}">${q.classe}</span>` : ""}</div>
-      <p class="tiny mute">Prolongado: > 450 ms no masculino, ≥ 460 ms no feminino. Curto: < 350 ms. O app converte os quadradinhos em milissegundos e corrige pela FC.</p></div>`;
-    if (q) h += q.longo ? ins("bad", "QTc prolongado", `${q.qtc} ms para o sexo informado.`) : q.curto ? ins("warn", "QTc curto", `${q.qtc} ms, abaixo de 350 ms.`) : ins("ok", "QTc dentro dos limites de referência", `${q.qtc} ms para o sexo informado.`);
-    if (largura === "largo") h += ins("warn", "QRS largo", "O alargamento do QRS pode prolongar o intervalo QT devido ao aumento da duração da despolarização ventricular. Interprete o QTc com cautela nesse cenário.");
-    return {html:h, ok:() => !!qt()};
+      <p class="tiny mute">Prolongado: > 450 ms no masculino, ≥ 460 ms no feminino. Curto: < 350 ms. O app converte os quadradinhos em milissegundos e corrige pela FC.</p></div>`);
+    if (q) B.res(q.longo ? "bad" : q.curto ? "warn" : "ok", q.longo ? "QTc prolongado" : q.curto ? "QTc curto" : "QTc dentro dos limites de referência", q.curto && !q.longo ? `${q.qtc} ms, abaixo de 350 ms.` : `${q.qtc} ms para o sexo informado.`);
+    if (largura === "largo") B.res("warn", "QRS largo", "O alargamento do QRS pode prolongar o intervalo QT devido ao aumento da duração da despolarização ventricular. Interprete o QTc com cautela nesse cenário.");
+    return {blocos:B.L, ok:() => !!qt()};
   },
   10: () => {
-    const r = R(), m = r.esp || [], q = qt();
-    let h = `<p class="small mute">Antes de terminar:</p><p class="q sm">Existe suspeita clínica de alguma destas condições?</p>
-    <div class="opts">${ESPECIAIS.map(([k, l]) => opt("esp", k, l, true)).join("")}${opt("esp","nenhuma","Nenhuma dessas",true)}</div>`;
-    const tri = k => `<div class="opts">${opt(k,"sim","Sim")}${opt(k,"nao","Não")}${opt(k,"naosei","Não sei identificar")}</div>`;
+    const r = R(), m = r.esp || [], q = qt(), B = Blocos();
+    const TRI = [["sim","Sim"],["nao","Não"],["naosei","Não sei identificar"]];
     const foto = (k, legenda) => r[k] === "naosei" ? `<div class="helpbox">${pendente(legenda)}<p class="tiny mute">Depois de comparar, responda sim ou não.</p></div>` : "";
+    B.multi("esp", {curto:"Suspeita clínica", antes:`<p class="small mute">Antes de terminar:</p>`, titulo:"Existe suspeita clínica de alguma destas condições?",
+      opcoes:ESPECIAIS.map(([k, l]) => [k, l]).concat([["nenhuma","Nenhuma dessas","Nenhuma"]])});
     if (m.includes("tep")){
       const ach = tepAchados();
-      h += `<div class="sec"><h3>TEP</h3></div><p class="small ink2">Vamos revisar o que já encontramos no seu ECG:</p>
-      <div class="crit">${ach.slice(0, 4).map(([t, ok]) => `<p>${t}: <b>${ok ? "SIM" : "NÃO"}</b></p>`).join("")}</div>
-      <p class="q sm">E então a única informação que falta: existe padrão S1Q3T3?</p>${tri("s1q3t3")}${foto("s1q3t3", "Imagem única mostrando DI e DIII com o padrão S1Q3T3")}`;
+      B.html(`<div class="sec"><h3>TEP</h3></div><p class="small ink2">Vamos revisar o que já encontramos no seu ECG:</p><div class="crit">${ach.slice(0, 4).map(([t, ok]) => `<p>${t}: <b>${ok ? "SIM" : "NÃO"}</b></p>`).join("")}</div>`);
+      B.escolha("s1q3t3", {curto:"Padrão S1Q3T3", titulo:"E então a única informação que falta: existe padrão S1Q3T3?", opcoes:TRI, pendentes:["naosei"], depois:foto("s1q3t3", "Imagem única mostrando DI e DIII com o padrão S1Q3T3")});
       if (simNao("s1q3t3")){
         const p = ach.filter(x => x[1]).map(x => x[0]);
-        h += ins(p.length ? "warn" : "info", p.length ? "Achados eletrocardiográficos que podem ocorrer no TEP" : "Nenhum dos achados pesquisados para TEP está presente",
+        B.res(p.length ? "warn" : "info", p.length ? "Achados eletrocardiográficos que podem ocorrer no TEP" : "Nenhum dos achados pesquisados para TEP está presente",
           (p.length ? p.join(" · ") + ". Quando presentes, esses achados podem aumentar a suspeita de TEP no contexto clínico adequado, mas não são específicos. " : "") + "A ausência desses achados não exclui TEP. Interprete o ECG em conjunto com o quadro clínico e a probabilidade pré-teste.");
       }
     }
-    if (m.includes("hiperca")) h += `<div class="sec"><h3>Hipercalcemia</h3></div><p class="small ink2">O Copiloto já sabe: QTc = ${q ? q.qtc + " ms" : "—"}. Não precisa perguntar nada novo.</p>`
-      + (q ? (q.curto ? ins("warn", "QTc encurtado identificado", "O encurtamento do QT é um achado eletrocardiográfico associado à hipercalcemia.") : ins("info", "O QTc calculado não está encurtado", "A ausência desse achado eletrocardiográfico não exclui hipercalcemia.")) : "");
-    if (m.includes("hipoca")) h += `<div class="sec"><h3>Hipocalcemia</h3></div><p class="small ink2">O Copiloto já sabe: QTc = ${q ? q.qtc + " ms" : "—"}.</p>`
-      + (q ? (q.longo ? ins("warn", "QTc prolongado identificado", "O prolongamento do QT pode ocorrer na hipocalcemia.") : ins("info", "O QTc calculado não está prolongado", "A ausência desse achado não exclui hipocalcemia.")) : "");
+    if (m.includes("hiperca")){
+      B.html(`<div class="sec"><h3>Hipercalcemia</h3></div><p class="small ink2">O Copiloto já sabe: QTc = ${q ? q.qtc + " ms" : "—"}. Não precisa perguntar nada novo.</p>`);
+      if (q) B.res(q.curto ? "warn" : "info", q.curto ? "QTc encurtado identificado" : "O QTc calculado não está encurtado", q.curto ? "O encurtamento do QT é um achado eletrocardiográfico associado à hipercalcemia." : "A ausência desse achado eletrocardiográfico não exclui hipercalcemia.");
+    }
+    if (m.includes("hipoca")){
+      B.html(`<div class="sec"><h3>Hipocalcemia</h3></div><p class="small ink2">O Copiloto já sabe: QTc = ${q ? q.qtc + " ms" : "—"}.</p>`);
+      if (q) B.res(q.longo ? "warn" : "info", q.longo ? "QTc prolongado identificado" : "O QTc calculado não está prolongado", q.longo ? "O prolongamento do QT pode ocorrer na hipocalcemia." : "A ausência desse achado não exclui hipocalcemia.");
+    }
     if (m.includes("hiperk")){
-      h += `<div class="sec"><h3>Hipercalemia</h3></div><p class="small ink2">Procure as seguintes alterações:</p>
-      <p class="q sm">1. As ondas T estão altas, estreitas e apiculadas?</p>${tri("hk1")}${foto("hk1", "Foto de ondas T altas, estreitas e apiculadas")}
-      <p class="q sm">2. Há fusão progressiva entre QRS e T, produzindo aspecto sinusoidal?</p>${tri("hk2")}${foto("hk2", "Foto do padrão sinusoidal")}`;
-      if (simNao("hk1") && simNao("hk2")) h += (r.hk1 === "sim" || r.hk2 === "sim") ? ins("bad", "Achados eletrocardiográficos que podem ser compatíveis com hipercalemia", "Correlacione com o potássio sérico e o contexto clínico.") : ins("ok", "Sem achados eletrocardiográficos sugestivos de hipercalemia", "");
+      B.html(`<div class="sec"><h3>Hipercalemia</h3></div><p class="small ink2">Procure as seguintes alterações:</p>`);
+      B.escolha("hk1", {curto:"T altas e apiculadas", titulo:"1. As ondas T estão altas, estreitas e apiculadas?", opcoes:TRI, pendentes:["naosei"], depois:foto("hk1", "Foto de ondas T altas, estreitas e apiculadas")});
+      B.escolha("hk2", {curto:"Aspecto sinusoidal", titulo:"2. Há fusão progressiva entre QRS e T, produzindo aspecto sinusoidal?", opcoes:TRI, pendentes:["naosei"], depois:foto("hk2", "Foto do padrão sinusoidal")});
+      if (simNao("hk1") && simNao("hk2")) B.res(...((r.hk1 === "sim" || r.hk2 === "sim") ? ["bad", "Achados eletrocardiográficos que podem ser compatíveis com hipercalemia", "Correlacione com o potássio sérico e o contexto clínico."] : ["ok", "Sem achados eletrocardiográficos sugestivos de hipercalemia", ""]));
     }
     if (m.includes("hipok")){
-      h += `<div class="sec"><h3>Hipocalemia</h3></div><p class="small ink2">Procure:</p>
-      <p class="q sm">1. Há redução/achatamento da onda T?</p>${tri("hpk1")}${foto("hpk1", "Foto de onda T achatada")}
-      <p class="q sm">2. Existe onda U proeminente?</p>${tri("hpk2")}${foto("hpk2", "Foto de onda U proeminente")}`;
-      if (simNao("hpk1") && simNao("hpk2")) h += (r.hpk1 === "sim" || r.hpk2 === "sim") ? ins("warn", "Achados eletrocardiográficos que podem ser compatíveis com hipocalemia", "Correlacione com o potássio sérico e o contexto clínico.") : ins("ok", "Sem achados eletrocardiográficos sugestivos de hipocalemia", "");
+      B.html(`<div class="sec"><h3>Hipocalemia</h3></div><p class="small ink2">Procure:</p>`);
+      B.escolha("hpk1", {curto:"T achatada", titulo:"1. Há redução/achatamento da onda T?", opcoes:TRI, pendentes:["naosei"], depois:foto("hpk1", "Foto de onda T achatada")});
+      B.escolha("hpk2", {curto:"Onda U proeminente", titulo:"2. Existe onda U proeminente?", opcoes:TRI, pendentes:["naosei"], depois:foto("hpk2", "Foto de onda U proeminente")});
+      if (simNao("hpk1") && simNao("hpk2")) B.res(...((r.hpk1 === "sim" || r.hpk2 === "sim") ? ["warn", "Achados eletrocardiográficos que podem ser compatíveis com hipocalemia", "Correlacione com o potássio sérico e o contexto clínico."] : ["ok", "Sem achados eletrocardiográficos sugestivos de hipocalemia", ""]));
     }
-    if (m.includes("nenhuma")) h += ins("ok", "Sem suspeita clínica de padrões especiais", "Vamos voltar ao paciente.");
-    return {html:h, ok:() => especiais().pronto};
+    if (m.includes("nenhuma")) B.res("ok", "Sem suspeita clínica de padrões especiais", "Vamos voltar ao paciente.");
+    return {blocos:B.L, ok:() => especiais().pronto};
   }
 };
 
 function telaSeq(){
-  const i = S.cur.passo, v = ETAPAS[i]();
+  const i = S.cur.passo, v = ETAPAS[i](), rb = renderBlocos(v.blocos), completa = v.ok() && !rb.temAtiva;
   const dir = S.dir || ""; S.dir = "";
   return `<div class="screen ${dir}">
   ${topo(i, PASSOS[i], `${S.cur.tela ? `<button class="icobtn" type="button" data-ver="1" aria-label="Ver o eletro">${I.olho}</button>` : ""}<button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Sair">${I.fechar}</button>`)}
   ${progresso(i)}
-  <div class="scroll stagger" id="seq-scroll">${v.html}</div>
-  <div class="foot"><button class="btn primary" type="button" id="proxima" ${v.ok() ? "" : "disabled"}>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
+  <div class="scroll stagger" id="seq-scroll">${rb.html}</div>
+  <div class="foot"><button class="btn primary" type="button" id="proxima" ${completa ? "" : "disabled"}>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
 }
 
 /* ---------- etapa 11: volte ao paciente ---------- */
@@ -1301,7 +1317,7 @@ function resumo(){
   const atencao = [], blocos = [], L = [], frases = [], conc = [];
   const bloco = (t, v, k, d) => blocos.push({t, v, k, d});
   const obs = [];
-  if (r.vel && r.amp && !calibPadrao()){ obs.push("Calibração fora do padrão ou não confirmada."); atencao.push("Calibração fora do padrão"); }
+  if (r.cal === "outra"){ obs.push("Calibração fora do padrão ou não confirmada."); atencao.push("Calibração fora do padrão"); }
   if (r.elet === "nao"){ obs.push("Possível troca de eletrodos dos membros."); atencao.push("Possível troca de eletrodos"); }
 
   const sin = sinusal();
@@ -1444,15 +1460,15 @@ function manterRolagem(fn){
   if (sc2){ sc2.classList.remove("stagger"); sc2.scrollTop = topoR; }
 }
 const RAMO6 = ["extra","extraQrs","qrs","tq","pind","temP","rel","bav","pns"];
-const RAMO8 = ["v1","sg1","sg2","sgST","sgS"];
+const RAMO8 = ["v1","sg1","sg2","sgST","sgS","sg3"];
 const DEPENDE = {
-  vel:["calSeguir"], amp:["calSeguir"], elet:["eletSeguir"],
+  cal:["calSeguir"], elet:["eletSeguir"],
   ritmo:["wiz1"].concat(RAMO6), wiz1:["wiz2"].concat(RAMO6), wiz2:["wiz3"].concat(RAMO6), wiz3:RAMO6,
-  reg:RAMO6.concat(["cq","cg","c10","fc"]), fc:RAMO6, extra:["extraQrs"], qrs:["tq","pind","qrs8","qrsMs"].concat(RAMO8), qrs8:["qrsMs"].concat(RAMO8), v1:["sg1","sg2","sgST","sgS"],
+  reg:RAMO6.concat(["cq","cg","c10","fc"]), fc:RAMO6, extra:["extraQrs"], qrs:["tq","pind","qrs8","qrsMs"].concat(RAMO8), qrs8:["qrsMs"].concat(RAMO8), v1:["sg1","sg2","sgST","sgS","sg3"],
   temP:["rel","bav","qrs"], rel:["bav"], pns:["qrs"],
-  di:["dii"], avf:["dii"], supraDist:["terr"], amp8:["svd","sV1","rV56","strainVE"]
+  di:["dii"], avf:["dii"], supraDist:["terr"], amp8:["svd","sV1","rV56","strainVE","sk"]
 };
-function limpar(k){ (DEPENDE[k] || []).forEach(x => { if (x in R()){ delete R()[x]; limpar(x); } }); }
+function limpar(k){ (DEPENDE[k] || []).forEach(x => { const tinha = x in R() || x in S.cur.conf; delete R()[x]; delete S.cur.conf[x]; if (tinha) limpar(x); }); }
 function definirFC(v){ if (R().fc !== v) limpar("fc"); R().fc = v; }
 function atualizarWiz(){
   const r = R();
@@ -1466,19 +1482,24 @@ function ligarOpts(raiz){
     const k = b.dataset.ans, v = b.dataset.val, r = R();
     if (b.dataset.multi === "1"){
       let arr = (r[k] || []).slice();
-      if (v === "nenhuma" || v === "nenhum") arr = arr.includes(v) ? [] : [v];
+      const exclusiva = v === "nenhuma" || v === "nenhum";
+      if (exclusiva) arr = arr.includes(v) ? [] : [v];
       else { arr = arr.filter(x => x !== "nenhuma" && x !== "nenhum"); arr = arr.includes(v) ? arr.filter(x => x !== v) : arr.concat(v); }
       r[k] = arr;
-      if (k === "isq"){ if (!arr.includes("supra")){ delete r.terr; delete r.supraDist; } if (!arr.includes("infra")) delete r.infraV1; if (!arr.includes("nenhuma")) delete r.padroes; }
+      // a opção exclusiva ("nenhuma") já confirma; qualquer outra mexida pede "Continuar" de novo
+      if (exclusiva && arr.length){ S.cur.conf[k] = true; S.editando = null; } else delete S.cur.conf[k];
+      if (k === "isq"){ if (!arr.includes("supra")){ delete r.terr; delete r.supraDist; delete S.cur.conf.terr; } if (!arr.includes("infra")) delete r.infraV1; if (!arr.includes("nenhuma")){ delete r.padroes; delete S.cur.conf.padroes; } }
       if (k === "esp"){ if (!arr.includes("tep")) delete r.s1q3t3; if (!arr.includes("hiperk")){ delete r.hk1; delete r.hk2; } if (!arr.includes("hipok")){ delete r.hpk1; delete r.hpk2; } }
     } else {
       if (r[k] !== v) limpar(k);
-      r[k] = v;
+      r[k] = v; delete S.cur.conf[k]; S.editando = null;
     }
     atualizarWiz();
     manterRolagem(desenhar);
     const novo = app.querySelector(`[data-ans="${k}"][data-val="${v}"]`); if (novo) novo.classList.add("pop");
   });
+  raiz.querySelectorAll("[data-editar]").forEach(b => b.onclick = () => { S.editando = b.dataset.editar; delete S.cur.conf[S.editando]; manterRolagem(desenhar); });
+  raiz.querySelectorAll("[data-conf]").forEach(b => b.onclick = () => { S.cur.conf[b.dataset.conf] = true; S.editando = null; manterRolagem(desenhar); });
 }
 function miniatura(){
   if (!S.cur.tela) return null;
@@ -1504,6 +1525,7 @@ function salvarLeitura(){
 function soltarVisor(){ if (S.visor){ S.visor.destruir(); S.visor = null; } }
 function irPara(t){
   if (t === "motivo" && S.tela !== "foto" && S.tela !== "seq"){ S.cur = nova(); S.vista = null; S.aberto = {}; }
+  S.editando = null;
   soltarVisor();
   S.tela = t;
   desenhar();
@@ -1546,7 +1568,7 @@ function desenhar(){
     if (S.tela === "laudo"){ S.tela = "seq"; S.cur.passo = ULTIMA_PERGUNTA; }
     else if (S.cur.passo > 2){ S.cur.passo--; S.dir = "back"; }
     else S.tela = "foto";
-    soltarVisor(); desenhar();
+    S.editando = null; soltarVisor(); desenhar();
   });
   app.querySelectorAll("[data-abrir]").forEach(b => b.onclick = () => {
     S.detalhe = S.leituras.find(l => l.id === b.dataset.abrir);
@@ -1595,9 +1617,8 @@ function desenhar(){
     fcIn.oninput = () => {
       const v = Math.round(+fcIn.value);
       if (v >= 10 && v <= 350) definirFC(v); else { limpar("fc"); delete R().fc; }
-      const b = document.getElementById("proxima"); if (b) b.disabled = !ETAPAS[4]().ok();
+      atualizarConf();
     };
-    fcIn.onchange = () => manterRolagem(desenhar);
   }
   const contaCalc = inp => { const n = +inp.value, f = +inp.dataset.fator; return !n ? null : (inp.dataset.calc || inp.dataset.gcalc) === "div" ? Math.round(f / n) : Math.round(n * f); };
   app.querySelectorAll("[data-calc]").forEach(inp => {
@@ -1607,20 +1628,13 @@ function desenhar(){
   });
   app.querySelectorAll("[data-usar-calc]").forEach(b => b.onclick = () => {
     const fc = contaCalc(document.getElementById(b.dataset.usarCalc));
-    if (fc && fc >= 10 && fc <= 350){ definirFC(fc); manterRolagem(desenhar); aviso("FC " + fc + " bpm"); }
+    // usar o valor calculado já é confirmar a FC
+    if (fc && fc >= 10 && fc <= 350){ definirFC(fc); S.cur.conf.fc = true; S.aberto.calcfc = false; manterRolagem(desenhar); aviso("FC " + fc + " bpm"); }
     else aviso("Confira o número digitado");
   });
-  // etapas 8 e 9: medidas em mm e quadradinhos. Digitou: recalcula o número na hora; saiu do campo: redesenha e devolve o foco.
+  // etapas 8 e 9: medidas em mm e quadradinhos. Digitou: recalcula o número e o botão Confirmar na hora.
   app.querySelectorAll("[data-num]").forEach(inp => {
-    inp.oninput = () => {
-      R()[inp.dataset.num] = inp.value; atualizarSaidas();
-      const b = document.getElementById("proxima"); if (b) b.disabled = !ETAPAS[S.cur.passo]().ok();
-    };
-    inp.onchange = () => setTimeout(() => {
-      const ativo = document.activeElement && document.activeElement.id;
-      manterRolagem(desenhar);
-      const el = ativo && document.getElementById(ativo); if (el && el !== inp){ try { el.focus({preventScroll:true}); } catch(_){} }
-    }, 0);
+    inp.oninput = () => { R()[inp.dataset.num] = inp.value; atualizarSaidas(); atualizarConf(); };
   });
   // guia: calculadoras soltas
   app.querySelectorAll("[data-gcalc]").forEach(inp => {
@@ -1644,6 +1658,7 @@ function desenhar(){
   if (S.tela === "seq"){
     const b = document.getElementById("proxima");
     if (b) b.onclick = () => {
+      S.editando = null;
       if (S.cur.passo < ULTIMA_PERGUNTA){ S.cur.passo++; S.dir = "fwd"; desenhar(); const sc = document.getElementById("seq-scroll"); if (sc) sc.scrollTop = 0; }
       else { S.tela = "laudo"; desenhar(); }
     };
@@ -1701,9 +1716,9 @@ function ligarMedir(){
     if (alvo === "fc"){
       const f = Math.round(60000 / ms);
       if (f < 10 || f > 350) return aviso("Confira as bolinhas");
-      definirFC(f); aviso("FC " + f + " bpm");
+      definirFC(f); S.cur.conf.fc = true; aviso("FC " + f + " bpm");
     } else if (alvo === "qt"){
-      R().qtQuad = Math.round(ms / MS_POR_MM * 10) / 10; S.aberto.medirqt = false; aviso("QT " + ms + " ms");
+      R().qtQuad = Math.round(ms / MS_POR_MM * 10) / 10; S.cur.conf.qtQuad = true; S.aberto.medirqt = false; aviso("QT " + ms + " ms");
     } else {
       const v = ms >= 120 ? "largo" : "estreito", chave = S.medir.chave || "qrs";
       if (R()[chave] !== v) limpar(chave);
@@ -1731,6 +1746,8 @@ inputArquivo.addEventListener("change", async () => {
     desenhar();
   } catch(_){ aviso("Não consegui abrir essa imagem"); }
 });
+
+window.__copiloto = {S, R, nova, arritmia, isquemia, qt, resumo, proximoPasso, desenhar};
 
 desenhar();
 })();
