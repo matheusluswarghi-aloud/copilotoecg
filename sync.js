@@ -3,6 +3,7 @@
    Sobe o registro sem a miniatura (thumb): a foto do eletro nunca sai do aparelho.
    Toda mudança entra primeiro numa fila local ("copiloto.fila") e sobe quando há rede; apagar deixa uma
    lápide ("copiloto.lapides") até a fila subir, para a leitura não voltar na próxima junção.
+   Cada operação leva o e-mail de quem a fez (dono) e só sobe para essa conta.
    Sem localStorage (modo privado), fila e lápides vivem só na memória. Sem cliente (config vazia), nada sobe
    e a fila espera. Regra da junção: vence o atualizadaEm mais novo; empate, a apagada vence. */
 (function(){
@@ -47,21 +48,27 @@
 
   /* ---------- fila ----------
      Uma operação por id: a mais nova substitui a anterior. Cada uma leva um número (n) para o envio
-     saber se ela mudou enquanto subia. */
+     saber se ela mudou enquanto subia, e o dono (e-mail da conta em uso). */
   const fila = () => ler(FILA, []);
   const lapides = () => ler(LAPIDES, []);
+  const emailAgora = () => (window.Conta && Conta.email()) || ler(DONO, null);
+  // apagadas desde que a página abriu: a lápide sai quando o apagar sobe, mas uma sincronização que
+  // baixou antes disso ainda traz a leitura viva e não pode ressuscitá-la
+  const apagadasAqui = new Map();
   function enfileirar(op){
     if (!op || !op.id) return;
-    const n = Date.now() + Math.random();
+    const n = Date.now() + Math.random(), dono = emailAgora();
     let item;
     if (op.tipo === "apagar"){
       const apagadaEm = Date.now();
-      item = {tipo:"apagar", id:op.id, apagadaEm, n};
+      item = {tipo:"apagar", id:op.id, apagadaEm, n, dono};
+      apagadasAqui.set(op.id, apagadaEm);
       gravar(LAPIDES, lapides().filter(x => x.id !== op.id).concat({id:op.id, apagadaEm}));
     } else {
       const registro = semThumb(op.registro || {id:op.id});
       if (!registro.atualizadaEm) registro.atualizadaEm = quandoMudou(registro) || Date.now();
-      item = {tipo:"salvar", id:op.id, registro, n};
+      item = {tipo:"salvar", id:op.id, registro, n, dono};
+      apagadasAqui.delete(op.id);
       if (lapides().some(x => x.id === op.id)) gravar(LAPIDES, lapides().filter(x => x.id !== op.id));
     }
     gravar(FILA, fila().filter(x => x.id !== op.id).concat(item));
@@ -95,9 +102,10 @@
   function enviar(){
     if (corrente) return corrente.then(() => enviar());
     corrente = (async () => {
-      const c = window.Conta && Conta.cliente(), ops = fila().slice();
-      if (!c || !Conta.email() || !ops.length) return {enviadas:0, pendentes:pendentes()};
-      const antes = ops.length;
+      const c = window.Conta && Conta.cliente(), eu = c && Conta.email();
+      const ops = fila().filter(o => o.dono === eu);   // a fila de outra conta nunca sobe para esta
+      if (!c || !eu || !ops.length) return {enviadas:0, pendentes:pendentes()};
+      const antes = pendentes();
       try { await subir(c, ops); } catch(_){}
       return {enviadas:Math.max(0, antes - pendentes()), pendentes:pendentes()};
     })().finally(() => { corrente = null; });
@@ -121,15 +129,17 @@
   }
 
   /* entrar e abrir com rede: sobe a fila, baixa a conta e junta com o aparelho (e as lápides).
-     Operação da fila que perdeu para uma versão mais nova do servidor sai da fila: subir depois
-     ressuscitaria a versão velha. Devolve as leituras vivas, ou null se não deu. */
-  async function sincronizar(locais){
+     obterLocais() é lido só depois da rede: a leitura salva ou apagada enquanto a rede demorava entra
+     na junção como está agora. Operação da fila que perdeu para uma versão mais nova do servidor sai
+     da fila: subir depois ressuscitaria a versão velha. Devolve as leituras vivas, ou null se não deu. */
+  async function sincronizar(obterLocais){
     await enviar();
     let remotas;
     try { remotas = await baixar(); } catch(_){ return null; }
-    const ids = new Set((locais || []).map(l => l.id));
-    const lap = lapides().filter(x => !ids.has(x.id)).map(x => ({id:x.id, atualizadaEm:x.apagadaEm, apagadaEm:x.apagadaEm}));
-    const juntas = juntar((locais || []).concat(lap), remotas);
+    const locais = obterLocais() || [], ids = new Set(locais.map(l => l.id));
+    const mortas = new Map(apagadasAqui); lapides().forEach(x => mortas.set(x.id, x.apagadaEm));
+    const lap = [...mortas].filter(([id]) => !ids.has(id)).map(([id, em]) => ({id, atualizadaEm:em, apagadaEm:em}));
+    const juntas = juntar(locais.concat(lap), remotas);
     const vencedora = new Map(juntas.map(l => [l.id, l]));
     const velhas = fila().filter(o => { const v = vencedora.get(o.id); return v && quandoMudou(v) > (o.tipo === "apagar" ? o.apagadaEm : quandoMudou(o.registro)); });
     if (velhas.length) tirarDaFila(velhas);
@@ -137,7 +147,7 @@
   }
 
   /* leituras sem dono: o primeiro e-mail que entra neste aparelho fica com elas (todas entram na fila).
-     Aparelho de outra conta: as locais não sobem. */
+     Aparelho de outra conta: quem chama limpa o aparelho antes (limparLocal) e só então adota. */
   function adotar(email, locais){
     const dono = ler(DONO, null);
     if (dono) return false;
@@ -149,7 +159,7 @@
   /* sair e excluir: o aparelho volta a ficar vazio — leituras, fotos, andamento, fila, lápides, dono e o
      nome da assinatura. Tema e modo revisão são do aparelho, ficam. */
   async function limparLocal(){
-    [FILA, LAPIDES, DONO].forEach(esquecer);
+    [FILA, LAPIDES, DONO].forEach(esquecer); apagadasAqui.clear();
     try { localStorage.removeItem("copiloto.leituras"); localStorage.removeItem("copiloto.andamento"); } catch(_){}
     try {
       const p = JSON.parse(localStorage.getItem("copiloto.prefs"));
@@ -165,5 +175,6 @@
     } catch(_){}
   }
 
-  window.Sync = {juntar, enfileirar, enviar, baixar, pendentes, limparLocal, sincronizar, adotar};
+  window.Sync = {juntar, enfileirar, enviar, baixar, pendentes, limparLocal, sincronizar, adotar,
+    dono(){ return ler(DONO, null); }};
 })();

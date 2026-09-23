@@ -15,6 +15,7 @@
     emailsComAcesso: new Set(),  // e-mails que "compraram", para pedir-codigo e o login inicial
     acesso: true,                // resultado de rpc("tem_acesso") — liga/desliga para simular corte
     offline: false,              // true: toda chamada rejeita com TypeError("Failed to fetch")
+    atrasoSelect: 0,             // ms de espera em cada select de "leituras" (a baixa lenta do plantão)
     codigo: "123456",            // código que verifyOtp aceita
     sessao: null,                // sessão atual, ou null (sem login)
     leituras: [],                // linhas de "leituras" no servidor falso
@@ -45,7 +46,7 @@
   try {
     const g = JSON.parse(sessionStorage.getItem(CHAVE_FALSA));
     if (g){
-      Object.assign(estado, {acesso:g.acesso, offline:g.offline, codigo:g.codigo, sessao:g.sessao, leituras:g.leituras || []});
+      Object.assign(estado, {acesso:g.acesso, offline:g.offline, codigo:g.codigo, sessao:g.sessao, leituras:g.leituras || [], atrasoSelect:g.atrasoSelect || 0});
       estado.emailsComAcesso = new Set(g.emailsComAcesso || []);
     }
   } catch(_){}
@@ -78,7 +79,12 @@
     };
     async function executar(){
       estado.chamadas.push({tabela: "leituras", operacao, filtros, dados: dadosUpsert, opcoes: opcoesUpsert, faixa});
+      // resposta lenta: o servidor lê as linhas na hora do pedido e a resposta chega depois
+      const foto = operacao === "select" && estado.atrasoSelect ? JSON.parse(JSON.stringify(estado.leituras)) : null;
+      if (foto) await new Promise(r => setTimeout(r, estado.atrasoSelect));
       await falhaSeOffline();
+      // RLS: leituras só enquanto tem_acesso()
+      if (!estado.acesso) return {data: null, error: {code: "42501", message: "new row violates row-level security policy for table \"leituras\""}};
       if (operacao === "upsert"){
         dadosUpsert.forEach(n => {
           const novo = JSON.parse(JSON.stringify(n));  // o servidor guarda uma cópia, como o de verdade
@@ -88,7 +94,7 @@
         });
         return {data: dadosUpsert, error: null};
       }
-      let linhas = estado.leituras.slice();
+      let linhas = (foto || estado.leituras).slice();
       filtros.forEach(f => {
         if (f.tipo === "eq") linhas = linhas.filter(l => l[f.coluna] === f.valor);
         if (f.tipo === "gt") linhas = linhas.filter(l => l[f.coluna] > f.valor);

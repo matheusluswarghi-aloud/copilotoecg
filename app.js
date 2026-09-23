@@ -1045,7 +1045,10 @@ function botaoSair(){
   const s = S.conta.saindo;
   if (!s) return `<button class="btn wide" type="button" data-sair-conta="1">Sair</button>`;
   const n = s.pendentes, um = n === 1;
-  if (n) return `${ins("bad", "Leituras não enviadas", `Há ${n} leitura${um ? "" : "s"} ainda não enviada${um ? "" : "s"}. Conecte-se à internet para sair sem perdê-${um ? "la" : "las"}.`)}
+  const motivo = S.tela === "encerrado"   // com o acesso encerrado o servidor recusa: conectar não adianta
+    ? `Há ${n} leitura${um ? "" : "s"} que não ${um ? "pôde" : "puderam"} ser enviada${um ? "" : "s"}, porque o acesso foi encerrado. Se sair, ${um ? "ela será apagada" : "elas serão apagadas"} deste aparelho.`
+    : `Há ${n} leitura${um ? "" : "s"} ainda não enviada${um ? "" : "s"}. Conecte-se à internet para sair sem perdê-${um ? "la" : "las"}.`;
+  if (n) return `${ins("bad", "Leituras não enviadas", motivo)}
     <div class="row2"><button class="btn" type="button" data-sair-cancela="1">Cancelar</button><button class="btn danger" type="button" data-sair-mesmo="1">Sair mesmo assim</button></div>`;
   return `${ins("warn", "Sair da conta?", "As fotos dos eletros ficam só neste aparelho e serão apagadas.")}
     <div class="row2"><button class="btn" type="button" data-sair-cancela="1">Cancelar</button><button class="btn danger" type="button" data-sair-confirma="1">Sair</button></div>`;
@@ -2124,12 +2127,21 @@ function entrou(){
    a conta desce e junta com o aparelho. Apagada em outro aparelho some daqui, com a foto. */
 async function sincronizar(){
   const email = Conta.email(); if (!email) return;
+  // aparelho de outra conta (a sessão dela morreu sem Sair): o que era dela sai antes, nada dela sobe aqui
+  const dono = Sync.dono();
+  if (dono && dono !== email){
+    await limparAparelho();
+    if (Conta.email() !== email) return;
+    if (S.tela === "inicio" || S.tela === "detalhe"){ S.tela = "inicio"; desenhar(); }
+  }
   Sync.adotar(email, S.leituras);
   if (!Plataforma.online()) return;
-  const lista = await Sync.sincronizar(S.leituras);   // a junção mantém a miniatura deste aparelho
+  // a lista vem juntada com o S.leituras do fim da espera: o que foi salvo ou apagado enquanto a rede
+  // demorava entra como está agora (a junção também mantém a miniatura deste aparelho)
+  const lista = await Sync.sincronizar(() => S.leituras);
   if (!lista || Conta.email() !== email) return;
   const ficam = new Set(lista.map(l => l.id)), marca = ls => ls.map(l => l.id + ":" + (l.atualizadaEm || l.quando)).join();
-  S.leituras.forEach(l => { if (!ficam.has(l.id)) apagarFoto(l.id); });
+  S.leituras.forEach(l => { if (!ficam.has(l.id)) apagarFoto(l.id); });  // só a que perdeu para um apagar mais novo
   lista.sort((a, b) => (b.quando || 0) - (a.quando || 0));
   const mudou = marca(lista) !== marca(S.leituras);
   S.leituras = lista;
@@ -2181,7 +2193,7 @@ inputArquivo.addEventListener("change", async () => {
   } catch(_){ aviso("Não consegui abrir essa imagem"); }
 });
 
-window.__copiloto = {S, R, nova, arritmia, isquemia, qt, resumo, proximoPasso, desenhar};
+window.__copiloto = {S, R, nova, arritmia, isquemia, qt, resumo, proximoPasso, desenhar, sincronizar};
 
 // a primeira tela sai na hora, da sessão guardada no aparelho; a rede só confirma depois
 const {sessao} = Conta.guardada();
