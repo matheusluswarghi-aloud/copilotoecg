@@ -1,0 +1,44 @@
+/* Copiloto de ECG — Geist e Geist Mono locais (pacote npm "geist", licença OFL — ver LICENSE.txt
+   nesta pasta). Sai o Google Fonts: o app funciona sem rede e dentro de um app de loja. */
+@font-face{
+  font-family:"Geist";
+  src:url("Geist-300.woff2") format("woff2");
+  font-weight:300;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Geist";
+  src:url("Geist-400.woff2") format("woff2");
+  font-weight:400;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Geist";
+  src:url("Geist-500.woff2") format("woff2");
+  font-weight:500;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Geist";
+  src:url("Geist-600.woff2") format("woff2");
+  font-weight:600;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Geist Mono";
+  src:url("GeistMono-400.woff2") format("woff2");
+  font-weight:400;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Geist Mono";
+  src:url("GeistMono-500.woff2") format("woff2");
+  font-weight:500;
+  font-style:normal;
+  font-display:swap;
+}

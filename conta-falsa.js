@@ -1,0 +1,147 @@
+/* Copiloto de ECG — conta-falsa.js
+   Só age com ?conta=falsa na URL: troca o cliente Supabase por um falso em memória, para os
+   testes rodarem sem rede nem projeto real. Imita só o que conta.js (T07) usa do supabase-js:
+   auth.getSession/onAuthStateChange/verifyOtp/signOut, rpc("tem_acesso"),
+   from("leituras").select/upsert/eq/gt e functions.invoke("pedir-codigo"|"excluir-conta").
+   Expõe window.__contaFalsa = {cliente, estado}, com o estado controlável pelos testes. */
+(function(){
+  "use strict";
+  const parametros = new URLSearchParams(location.search);
+  if (parametros.get("conta") !== "falsa") return;
+
+  const normalizarEmail = e => String(e || "").trim().toLowerCase();
+
+  const estado = {
+    emailsComAcesso: new Set(),  // e-mails que "compraram", para pedir-codigo e o login inicial
+    acesso: true,                // resultado de rpc("tem_acesso") — liga/desliga para simular corte
+    offline: false,              // true: toda chamada rejeita com TypeError("Failed to fetch")
+    codigo: "123456",            // código que verifyOtp aceita
+    sessao: null,                // sessão atual, ou null (sem login)
+    leituras: [],                // linhas de "leituras" no servidor falso
+    chamadas: []                 // registro de toda chamada, para os testes conferirem
+  };
+
+  const ouvintes = [];
+  function dispararSessao(sessao){
+    ouvintes.slice().forEach(fn => { try { fn(sessao ? "SIGNED_IN" : "SIGNED_OUT", sessao); } catch(_){} });
+  }
+  function criarSessao(email){
+    return {
+      access_token: "falso." + email,
+      refresh_token: "falso-refresh." + email,
+      token_type: "bearer",
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: {id: "uid-" + email, email, aud: "authenticated"}
+    };
+  }
+  async function falhaSeOffline(){
+    if (estado.offline) throw new TypeError("Failed to fetch");
+  }
+
+  // &logado=1: já nasce com sessão de medico@teste.com, com acesso — atalho para os testes que
+  // não precisam repetir o fluxo de login inteiro.
+  if (parametros.get("logado") === "1"){
+    const email = "medico@teste.com";
+    estado.emailsComAcesso.add(email);
+    estado.sessao = criarSessao(email);
+  }
+
+  // imita o query builder do supabase-js sobre "leituras": encadeia filtros e só executa quando
+  // é aguardado (o builder é "thenable", como o de verdade)
+  function leiturasBuilder(){
+    let operacao = null, dadosUpsert = null;
+    const filtros = [];
+    const builder = {
+      select(){ if (!operacao) operacao = "select"; return builder; },
+      upsert(dados){ operacao = "upsert"; dadosUpsert = Array.isArray(dados) ? dados : [dados]; return builder; },
+      eq(coluna, valor){ filtros.push({tipo: "eq", coluna, valor}); return builder; },
+      gt(coluna, valor){ filtros.push({tipo: "gt", coluna, valor}); return builder; },
+      then(aoResolver, aoRejeitar){ return executar().then(aoResolver, aoRejeitar); },
+      catch(aoRejeitar){ return executar().catch(aoRejeitar); }
+    };
+    async function executar(){
+      estado.chamadas.push({tabela: "leituras", operacao, filtros, dados: dadosUpsert});
+      await falhaSeOffline();
+      if (operacao === "upsert"){
+        dadosUpsert.forEach(novo => {
+          const i = estado.leituras.findIndex(l => l.id === novo.id);
+          if (i >= 0) estado.leituras[i] = Object.assign({}, estado.leituras[i], novo);
+          else estado.leituras.push(Object.assign({}, novo));
+        });
+        return {data: dadosUpsert, error: null};
+      }
+      let linhas = estado.leituras.slice();
+      filtros.forEach(f => {
+        if (f.tipo === "eq") linhas = linhas.filter(l => l[f.coluna] === f.valor);
+        if (f.tipo === "gt") linhas = linhas.filter(l => l[f.coluna] > f.valor);
+      });
+      return {data: linhas, error: null};
+    }
+    return builder;
+  }
+
+  const cliente = {
+    auth: {
+      async getSession(){
+        await falhaSeOffline();
+        return {data: {session: estado.sessao || null}, error: null};
+      },
+      onAuthStateChange(fn){
+        ouvintes.push(fn);
+        // o supabase-js de verdade dispara um evento inicial assim que alguém assina
+        setTimeout(() => fn("INITIAL_SESSION", estado.sessao || null), 0);
+        return {data: {subscription: {unsubscribe(){ const i = ouvintes.indexOf(fn); if (i >= 0) ouvintes.splice(i, 1); }}}};
+      },
+      async verifyOtp({email, token}){
+        estado.chamadas.push({metodo: "verifyOtp", email, token});
+        await falhaSeOffline();
+        if (token !== estado.codigo){
+          return {data: {session: null, user: null}, error: {name: "AuthApiError", message: "Token has expired or is invalid", status: 403}};
+        }
+        const sessao = criarSessao(normalizarEmail(email));
+        estado.sessao = sessao;
+        dispararSessao(sessao);
+        return {data: {session: sessao, user: sessao.user}, error: null};
+      },
+      async signOut(){
+        estado.chamadas.push({metodo: "signOut"});
+        await falhaSeOffline();
+        estado.sessao = null;
+        dispararSessao(null);
+        return {error: null};
+      }
+    },
+    async rpc(nome, parametrosRpc){
+      estado.chamadas.push({rpc: nome, parametros: parametrosRpc});
+      await falhaSeOffline();
+      if (nome === "tem_acesso") return {data: estado.acesso, error: null};
+      return {data: null, error: {message: "conta-falsa: rpc não suportada: " + nome}};
+    },
+    from(tabela){
+      if (tabela === "leituras") return leiturasBuilder();
+      throw new Error("conta-falsa: tabela não suportada: " + tabela);
+    },
+    functions: {
+      async invoke(nome, opcoes){
+        const corpo = (opcoes && opcoes.body) || {};
+        estado.chamadas.push({funcao: nome, corpo});
+        await falhaSeOffline();
+        if (nome === "pedir-codigo"){
+          const email = normalizarEmail(corpo.email);
+          if (estado.emailsComAcesso.has(email)) return {data: {ok: true}, error: null};
+          const resposta = new Response(JSON.stringify({erro: "sem_acesso"}), {status: 404, headers: {"content-type": "application/json"}});
+          return {data: null, error: {name: "FunctionsHttpError", message: "Edge Function returned a non-2xx status code", context: resposta}};
+        }
+        if (nome === "excluir-conta"){
+          estado.leituras = [];
+          estado.sessao = null;
+          dispararSessao(null);
+          return {data: {ok: true}, error: null};
+        }
+        return {data: null, error: {message: "conta-falsa: função não suportada: " + nome}};
+      }
+    }
+  };
+
+  window.__contaFalsa = {cliente, estado};
+})();

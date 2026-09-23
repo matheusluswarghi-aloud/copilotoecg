@@ -88,14 +88,8 @@ async function continuarLeitura(){
   S.editando = null; S.tela = "seq"; desenhar(true);
 }
 /* a tela não pode apagar no meio da leitura; fora dela, o aparelho volta ao normal */
-let trava = null;
 const emLeitura = () => ["motivo", "foto", "seq", "medir", "ver", "laudo"].includes(S.tela);
-async function travarTela(ligar){
-  try {
-    if (ligar && !trava && navigator.wakeLock){ trava = await navigator.wakeLock.request("screen"); trava.addEventListener("release", () => { trava = null; }); }
-    else if (!ligar && trava){ const x = trava; trava = null; await x.release(); }
-  } catch(_){ trava = null; }
-}
+async function travarTela(ligar){ await Plataforma.telaAcesa(ligar); }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && emLeitura()) travarTela(true); });
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); S.instalar = e; });
 
@@ -419,9 +413,7 @@ function pedirFoto(fonte){
   // foto pedida pelo dock volta para a etapa, não para o começo. Refazer a foto dentro do conferidor
   // (S.tela === "foto") não pode apagar de onde ela veio.
   if (S.tela !== "foto") S.fotoOrigem = S.tela === "seq" ? "seq" : null;
-  if (fonte === "camera") inputArquivo.setAttribute("capture", "environment");
-  else inputArquivo.removeAttribute("capture");
-  inputArquivo.click();
+  Plataforma.escolherFoto(fonte);
 }
 async function prepararFoto(file){
   const url = URL.createObjectURL(file);
@@ -1769,8 +1761,7 @@ function ligar(raiz){
   raiz.querySelectorAll("[data-medir]").forEach(b => b.onclick = () => { S.medir = {alvo:b.dataset.medir, chave:b.dataset.chave || null}; soltarVisor(); S.tela = "medir"; desenhar(); });
   raiz.querySelectorAll("[data-discutir]").forEach(b => b.onclick = () => {
     const txt = resumo().texto + assinatura();
-    try { navigator.clipboard.writeText(txt).then(() => aviso("Interpretação copiada. Cole no grupo."), () => aviso("Não deu para copiar aqui")); }
-    catch(_){ aviso("Não deu para copiar aqui"); }
+    Plataforma.copiar(txt).then(ok => aviso(ok ? "Interpretação copiada. Cole no grupo." : "Não deu para copiar aqui"));
   });
   raiz.querySelectorAll("[data-sair-medir]").forEach(b => b.onclick = () => { soltarVisor(); S.tela = "seq"; desenhar(); });
   raiz.querySelectorAll("[data-recalibrar]").forEach(b => b.onclick = () => { S.cur.escala = null; S.cur.pontos.fc = null; S.cur.pontos.qrs = null; S.cur.pontos.qt = null; S.vista = null; soltarVisor(); desenhar(); });
@@ -1786,8 +1777,7 @@ function ligar(raiz){
   });
   raiz.querySelectorAll("[data-copiar]").forEach(b => b.onclick = () => {
     const txt = (S.tela === "detalhe" ? S.detalhe.laudo : resumo().texto) + assinatura();
-    try { navigator.clipboard.writeText(txt).then(() => aviso("Laudo copiado"), () => aviso("Não deu para copiar aqui")); }
-    catch(_){ aviso("Não deu para copiar aqui"); }
+    Plataforma.copiar(txt).then(ok => aviso(ok ? "Laudo copiado" : "Não deu para copiar aqui"));
   });
   raiz.querySelectorAll("[data-apagar]").forEach(b => b.onclick = () => {
     const id = b.dataset.apagar;

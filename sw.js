@@ -1,8 +1,11 @@
 /* Copiloto de ECG — service worker.
    Rede primeiro, com limite de 3 s; o cache é a reserva para plantão sem sinal.
    Assim, com internet, a versão nova aparece na hora. */
-const VERSAO = "copiloto-v6", FONTES = "copiloto-fontes";
-const CASCA = ["./", "index.html", "style.css", "controles.css", "app.js", "controles.js", "manifest.webmanifest",
+const VERSAO = "copiloto-v7";
+const CASCA = ["./", "index.html", "style.css", "controles.css", "app.js", "controles.js", "plataforma.js",
+  "config.js", "conta-falsa.js", "vendor/supabase.js", "fontes/fontes.css",
+  "fontes/Geist-300.woff2", "fontes/Geist-400.woff2", "fontes/Geist-500.woff2", "fontes/Geist-600.woff2",
+  "fontes/GeistMono-400.woff2", "fontes/GeistMono-500.woff2", "manifest.webmanifest",
   "icones/icon-192.png", "icones/icon-512.png", "icones/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -10,7 +13,7 @@ self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSAO).then(c => Promise.allSettled(CASCA.map(u => c.add(new Request(u, {cache:"reload"}))))).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSAO && k !== FONTES).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSAO).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 const comLimite = (p, ms) => new Promise((ok, erro) => { const r = setTimeout(() => erro(new Error("rede lenta")), ms); p.then(v => { clearTimeout(r); ok(v); }, x => { clearTimeout(r); erro(x); }); });
 
@@ -18,13 +21,7 @@ self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com"){
-    e.respondWith(caches.open(FONTES).then(async c => {
-      const guardado = await c.match(req); if (guardado) return guardado;
-      const r = await fetch(req); if (r.ok || r.type === "opaque") c.put(req, r.clone()); return r;
-    }));
-    return;
-  }
+  if (url.hostname.endsWith(".supabase.co")) return;  // sessão e sincronização nunca passam pelo cache
   if (url.origin !== location.origin) return;
   e.respondWith((async () => {
     const c = await caches.open(VERSAO);

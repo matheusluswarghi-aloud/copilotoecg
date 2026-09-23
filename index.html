@@ -13,9 +13,7 @@
 <link rel="icon" type="image/png" href="icones/icon-192.png">
 <link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
 <title>Copiloto de ECG</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="fontes/fontes.css">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="controles.css">
 </head>
@@ -26,8 +24,12 @@
   <div class="app" id="app"></div>
 </div>
 <input type="file" id="arquivo" accept="image/*" hidden>
+<script src="vendor/supabase.js"></script>
+<script src="config.js"></script>
+<script src="plataforma.js"></script>
+<script src="conta-falsa.js"></script>
 <script src="controles.js"></script>
 <script src="app.js"></script>
-<script>if ("serviceWorker" in navigator) addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });</script>
+<script>if (["http:", "https:"].includes(location.protocol) && "serviceWorker" in navigator) addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });</script>
 </body>
 </html>
