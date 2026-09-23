@@ -66,7 +66,7 @@
 
   async function pedirCodigo(email){
     const e = normalizar(email);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return "email_invalido";
+    if (!/^[^\s@.]+(\.[^\s@.]+)*@[^\s@.]+(\.[^\s@.]+)+$/.test(e)) return "email_invalido";
     const c = cliente(); if (!c) return "falha";
     try {
       const {data, error} = await c.functions.invoke("pedir-codigo", {body:{email:e}});
