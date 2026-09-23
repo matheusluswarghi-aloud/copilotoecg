@@ -3,7 +3,7 @@
    Assim, com internet, a versão nova aparece na hora. */
 const VERSAO = "copiloto-v7";
 const CASCA = ["./", "index.html", "style.css", "controles.css", "app.js", "controles.js", "plataforma.js",
-  "config.js", "conta-falsa.js", "conta.js", "vendor/supabase.js", "fontes/fontes.css",
+  "config.js", "conta-falsa.js", "conta.js", "sync.js", "vendor/supabase.js", "fontes/fontes.css",
   "fontes/Geist-300.woff2", "fontes/Geist-400.woff2", "fontes/Geist-500.woff2", "fontes/Geist-600.woff2",
   "fontes/GeistMono-400.woff2", "fontes/GeistMono-500.woff2", "manifest.webmanifest",
   "icones/icon-192.png", "icones/icon-512.png", "icones/apple-touch-icon.png"];

@@ -2,7 +2,7 @@
    Só age com ?conta=falsa na URL: troca o cliente Supabase por um falso em memória, para os
    testes rodarem sem rede nem projeto real. Imita só o que conta.js (T07) usa do supabase-js:
    auth.getSession/onAuthStateChange/verifyOtp/signOut, rpc("tem_acesso"),
-   from("leituras").select/upsert/eq/gt e functions.invoke("pedir-codigo"|"excluir-conta").
+   from("leituras").select/upsert/eq/gt/order/range e functions.invoke("pedir-codigo"|"excluir-conta").
    Expõe window.__contaFalsa = {cliente, estado}, com o estado controlável pelos testes. */
 (function(){
   "use strict";
@@ -64,21 +64,24 @@
   // imita o query builder do supabase-js sobre "leituras": encadeia filtros e só executa quando
   // é aguardado (o builder é "thenable", como o de verdade)
   function leiturasBuilder(){
-    let operacao = null, dadosUpsert = null;
+    let operacao = null, dadosUpsert = null, opcoesUpsert = null, faixa = null;
     const filtros = [];
     const builder = {
       select(){ if (!operacao) operacao = "select"; return builder; },
-      upsert(dados){ operacao = "upsert"; dadosUpsert = Array.isArray(dados) ? dados : [dados]; return builder; },
+      upsert(dados, opcoes){ operacao = "upsert"; dadosUpsert = Array.isArray(dados) ? dados : [dados]; opcoesUpsert = opcoes || null; return builder; },
       eq(coluna, valor){ filtros.push({tipo: "eq", coluna, valor}); return builder; },
       gt(coluna, valor){ filtros.push({tipo: "gt", coluna, valor}); return builder; },
+      order(coluna){ filtros.push({tipo: "order", coluna}); return builder; },
+      range(de, ate){ faixa = [de, ate]; return builder; },
       then(aoResolver, aoRejeitar){ return executar().then(aoResolver, aoRejeitar); },
       catch(aoRejeitar){ return executar().catch(aoRejeitar); }
     };
     async function executar(){
-      estado.chamadas.push({tabela: "leituras", operacao, filtros, dados: dadosUpsert});
+      estado.chamadas.push({tabela: "leituras", operacao, filtros, dados: dadosUpsert, opcoes: opcoesUpsert, faixa});
       await falhaSeOffline();
       if (operacao === "upsert"){
-        dadosUpsert.forEach(novo => {
+        dadosUpsert.forEach(n => {
+          const novo = JSON.parse(JSON.stringify(n));  // o servidor guarda uma cópia, como o de verdade
           const i = estado.leituras.findIndex(l => l.id === novo.id);
           if (i >= 0) estado.leituras[i] = Object.assign({}, estado.leituras[i], novo);
           else estado.leituras.push(Object.assign({}, novo));
@@ -89,8 +92,10 @@
       filtros.forEach(f => {
         if (f.tipo === "eq") linhas = linhas.filter(l => l[f.coluna] === f.valor);
         if (f.tipo === "gt") linhas = linhas.filter(l => l[f.coluna] > f.valor);
+        if (f.tipo === "order") linhas.sort((a, b) => a[f.coluna] < b[f.coluna] ? -1 : a[f.coluna] > b[f.coluna] ? 1 : 0);
       });
-      return {data: linhas, error: null};
+      if (faixa) linhas = linhas.slice(faixa[0], faixa[1] + 1);
+      return {data: JSON.parse(JSON.stringify(linhas)), error: null};
     }
     return builder;
   }

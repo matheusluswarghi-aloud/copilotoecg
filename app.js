@@ -3,7 +3,8 @@
    Roteiro clínico: documento do Dr. Vitor ("Ferramenta ECG - Protótipo atualizado", 19/09/2026):
    11 etapas, da queixa ao próximo passo clínico.
    Tudo roda no aparelho: a foto do eletro nunca sai do celular.
-   Fotos no IndexedDB; leituras e preferências no localStorage. */
+   Fotos no IndexedDB; leituras e preferências no localStorage. As leituras (sem a miniatura) também
+   sobem para a conta pelo sync.js. */
 (function(){
 
 const app = document.getElementById("app");
@@ -54,7 +55,7 @@ const S = {
   conta:contaVazia()
 };
 /* porta de entrada (T07): e-mail digitado, resposta do último pedido, erros de código, relógio do reenviar */
-function contaVazia(){ return {email:"", msg:null, enviando:false, verificando:false, erros:0, reenviarEm:0, excluindo:false}; }
+function contaVazia(){ return {email:"", msg:null, enviando:false, verificando:false, erros:0, reenviarEm:0, excluindo:false, saindo:null}; }
 function aplicarTema(){ document.documentElement.setAttribute("data-theme", S.prefs.tema === "claro" ? "light" : "dark"); }
 aplicarTema();
 
@@ -812,7 +813,7 @@ function inicio(){
     ${monitorHTML()}
     <div class="sec"><h3>Suas leituras</h3>${n ? `<button class="textbtn" type="button" data-aba="biblioteca">Ver todas ${I.seta}</button>` : ""}</div>
     ${n ? `<div class="rgrid">${ult.map(cardLeitura).join("")}</div>`
-      : `<div class="card"><div class="empty" style="padding:14px 6px"><p class="ink2">Nenhuma leitura guardada.</p><p class="tiny">A primeira fica aqui, com o laudo e a foto. Nada sai deste aparelho.</p></div></div>`}
+      : `<div class="card"><div class="empty" style="padding:14px 6px"><p class="ink2">Nenhuma leitura guardada.</p><p class="tiny">A primeira fica aqui, com o laudo e a foto. A foto não sai deste aparelho.</p></div></div>`}
     <div class="stats">
       <div class="stat"><span class="n" data-count="${n}">0</span><span class="l">leitura${n === 1 ? "" : "s"}</span></div>
       <div class="stat"><span class="n" data-count="${at}">0</span><span class="l">com atenção</span></div>
@@ -885,7 +886,7 @@ function biblioteca(){
       ${motivos.map(([k, n]) => `<button class="chip" type="button" data-fmotivo="${k}" aria-pressed="${S.filtro.motivo === k}">${(MOTIVOS.find(m => m.k === k) || {curto:k}).curto} · ${n}</button>`).join("")}
     </div>
     ${lista.length ? `<div class="rlist">${lista.map(itemLeitura).join("")}</div>`
-      : `<div class="empty">${I.vazio}<p class="ink2">${S.leituras.length ? "Nada com esse filtro." : "Ainda não há leituras salvas."}</p><p class="tiny">${S.leituras.length ? "Tente outra busca ou limpe os filtros." : "Cada leitura guarda o laudo, as respostas e a foto, só neste celular."}</p></div>`}
+      : `<div class="empty">${I.vazio}<p class="ink2">${S.leituras.length ? "Nada com esse filtro." : "Ainda não há leituras salvas."}</p><p class="tiny">${S.leituras.length ? "Tente outra busca ou limpe os filtros." : "Cada leitura guarda o laudo e a foto. A foto fica só neste celular."}</p></div>`}
   </div>${nav()}</div>`;
 }
 function itemLeitura(l){
@@ -930,7 +931,7 @@ function guia(){
       <div class="card"><h3>A foto é opcional</h3><p class="small ink2">Você pode ler direto no papel. Com a foto, o eletro fica no topo de todas as etapas — dá para dar zoom, recolher e abrir em tela cheia — e dá para medir com a régua na tela. <b>Câmera</b> fotografa na hora; <b>Galeria</b> usa uma foto já tirada.</p></div>
       <div class="card"><h3>A régua na foto</h3><p class="small ink2">Antes de medir, arraste as duas bolinhas sobre cinco quadradões (1 segundo de papel). O app aprende a escala daquela foto e passa a medir em milissegundos.</p></div>
       <div class="card"><h3>O laudo</h3><p class="small ink2">O texto final é montado com as suas respostas e pode sair assinado com o seu nome (Configurações). Confira antes de copiar.</p></div>
-      <div class="card"><h3>Privacidade</h3><p class="small ink2">A foto e as respostas ficam neste aparelho. O app não envia nada para servidor nenhum.</p><p class="small ink2">A leitura em andamento também fica só aqui, para você continuar se for interrompido.</p></div>`;
+      <div class="card"><h3>Privacidade</h3><p class="small ink2">A foto do eletro fica só neste aparelho. O laudo de cada leitura salva fica guardado também na sua conta, para não se perder se você trocar de celular.</p><p class="small ink2">A leitura em andamento também fica só aqui, para você continuar se for interrompido.</p></div>`;
   } else {
     const g = [["Ritmo sinusal","P positiva em DI, DII e aVF, negativa em aVR, precedendo cada QRS com a mesma morfologia."],["Regular / irregular","Compare os intervalos R-R ao longo do traçado."],["QRS largo","120 ms ou mais: três quadradinhos ou mais."],["Derivações contíguas","Inferior: DII, DIII, aVF · Lateral: DI, aVL, V5, V6 · Anterior/septal: V1 a V4."],["Calibração padrão","25 mm/s e 10 mm/mV, impressos no próprio ECG."],["Eixo por DI e aVF","Os dois positivos: normal. DI positivo e aVF negativo: DII desempata. DI negativo e aVF positivo: direita. Os dois negativos: extremo."],["Sgarbossa modificado","No BRE com suspeita de isquemia: supra ≥ 1 mm concordante, infra ≥ 1 mm em V1–V3 ou supra ÷ onda S ≥ 0,25 em V1–V3."],["Sokolow-Lyon","S em V1 + maior R em V5/V6 > 35 mm: critério de voltagem para aumento ventricular esquerdo."],["QTc (Bazett)","QT ÷ √RR. Prolongado: > 450 ms (M), ≥ 460 ms (F). Curto: < 350 ms."]];
     corpo = `<div class="card"><h3>Termos usados no app</h3><div class="gloss">${g.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("")}</div><p class="tiny mute">Definições como aparecem no roteiro do Dr. Vitor.</p></div>`;
@@ -957,9 +958,9 @@ function config(){
       <div class="toggle"><div class="l"><strong>Tema claro</strong><span>Para ambientes muito iluminados</span></div><button class="switch" type="button" role="switch" aria-checked="${p.tema === "claro"}" data-pref="tema"></button></div>
       <div class="toggle"><div class="l"><strong>Modo revisão</strong><span>Mostra os lembretes das imagens que o Dr. Vitor ainda vai enviar</span></div><button class="switch" type="button" role="switch" aria-checked="${!!p.revisao}" data-pref="revisao"></button></div>
     </div>
-    <div class="card"><h3>Dados</h3><p class="small mute">${n} leitura${n === 1 ? "" : "s"} guardada${n === 1 ? "" : "s"} neste aparelho. Nada é enviado a servidor.</p>
+    <div class="card"><h3>Dados</h3><p class="small mute">${n} leitura${n === 1 ? "" : "s"} neste aparelho. Os laudos ficam guardados também na sua conta; as fotos, só aqui.</p>
       <button class="btn danger" type="button" data-apagar-tudo="1" ${n ? "" : "disabled"}>${I.lixo}Apagar todas as leituras</button>
-      ${S.confirmaApagar ? `${ins("bad", "Tem certeza?", `Isso apaga as ${n} leituras e as fotos. Não dá para desfazer.`)}<div class="row2"><button class="btn" type="button" data-cancela-apagar="1">Cancelar</button><button class="btn danger" type="button" data-confirma-apagar="1">Apagar tudo</button></div>` : ""}</div>
+      ${S.confirmaApagar ? `${ins("bad", "Tem certeza?", `Isso apaga as ${n} leituras, deste aparelho e da sua conta, e as fotos. Não dá para desfazer.`)}<div class="row2"><button class="btn" type="button" data-cancela-apagar="1">Cancelar</button><button class="btn danger" type="button" data-confirma-apagar="1">Apagar tudo</button></div>` : ""}</div>
     <p class="tiny mute" style="text-align:center">Copiloto de ECG · versão 6.2 · roteiro clínico do Dr. Vitor Coutinho (19/09)</p>
   </div></div>`;
 }
@@ -1034,9 +1035,20 @@ function telaEncerrado(){
   <div class="scroll stagger">
     <div class="porta-cab"><span class="tag bad">Acesso encerrado</span><h1>Seu acesso ao Copiloto foi encerrado.</h1>
       <p class="ink2">Se acha que é um engano, fale com o suporte: ${linkSuporte()}</p></div>
-    <button class="btn wide" type="button" data-sair-conta="1">Sair</button>
+    ${botaoSair()}
     ${e ? `<p class="tiny mute porta-pe">Conta: ${esc(e)}</p>` : ""}
   </div></div>`;
+}
+/* Sair (T08): primeiro tenta subir a fila. Sobrou pendente (sem rede): não sai, avisa e deixa escolher.
+   Sem pendente: confirma, porque as fotos só existem neste aparelho. */
+function botaoSair(){
+  const s = S.conta.saindo;
+  if (!s) return `<button class="btn wide" type="button" data-sair-conta="1">Sair</button>`;
+  const n = s.pendentes, um = n === 1;
+  if (n) return `${ins("bad", "Leituras não enviadas", `Há ${n} leitura${um ? "" : "s"} ainda não enviada${um ? "" : "s"}. Conecte-se à internet para sair sem perdê-${um ? "la" : "las"}.`)}
+    <div class="row2"><button class="btn" type="button" data-sair-cancela="1">Cancelar</button><button class="btn danger" type="button" data-sair-mesmo="1">Sair mesmo assim</button></div>`;
+  return `${ins("warn", "Sair da conta?", "As fotos dos eletros ficam só neste aparelho e serão apagadas.")}
+    <div class="row2"><button class="btn" type="button" data-sair-cancela="1">Cancelar</button><button class="btn danger" type="button" data-sair-confirma="1">Sair</button></div>`;
 }
 /* Configurações: a conta vem primeiro. Excluir pede a palavra digitada, não um toque só. */
 function cartaoConta(){
@@ -1044,7 +1056,7 @@ function cartaoConta(){
   return `<div class="card conta">
     <div class="sec" style="margin:0"><h3>Conta</h3><span class="tag ok">conectada</span></div>
     <p class="conta-email quebra">${esc(e || "—")}</p>
-    <button class="btn wide" type="button" data-sair-conta="1">Sair</button>
+    ${botaoSair()}
     ${c.excluindo ? `${ins("bad", "Excluir sua conta?", "Apaga sua conta e as leituras guardadas nela. Seu acesso de compra continua válido: você pode entrar de novo depois.")}
       <div class="field"><label for="c-excluir">Digite EXCLUIR para confirmar</label><input type="text" id="c-excluir" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
       <div class="row2"><button class="btn" type="button" data-excluir-cancela="1">Cancelar</button><button class="btn danger" type="button" id="c-excluir-ok" disabled>Excluir conta</button></div>`
@@ -1764,9 +1776,11 @@ function salvarLeitura(o){
   const s = resumo(), r = R();
   const reg = { id:S.cur.id, quando:S.cur.quando, motivo:S.cur.motivo, queixa:motivo() ? motivo().nome : "Leitura",
     conc:s.titulo, alerta:s.atencao.length > 0, laudo:s.texto, thumb:miniatura(),
-    fc:r.fc || null, qrsLargo:larguraQRS() === "largo", irregular:r.reg === "irregular", qtc:qt() ? qt().qtc : null };
+    fc:r.fc || null, qrsLargo:larguraQRS() === "largo", irregular:r.reg === "irregular", qtc:qt() ? qt().qtc : null,
+    atualizadaEm:Date.now() };
   S.leituras = [reg].concat(S.leituras.filter(l => l.id !== reg.id));
   S.salvou = gravarJSON(CHAVE, S.leituras);   // a marca da etapa 11 só pode dizer "salva" se gravou mesmo
+  Sync.enfileirar({tipo:"salvar", id:reg.id, registro:reg}); Sync.enviar();  // sobe sem a miniatura; sem rede, espera na fila
   if (S.cur.blob) guardarFoto(S.cur.id, S.cur.blob);
   descartarAndamento();
   if (o && o.silencioso) return;
@@ -1787,7 +1801,7 @@ function irPara(t){
 }
 function irAba(a){
   soltarVisor();
-  S.tela = "inicio"; S.aba = a; S.confirmaApagar = false; S.editando = null;
+  S.tela = "inicio"; S.aba = a; S.confirmaApagar = false; S.conta.saindo = null; S.editando = null;
   desenhar(true);
 }
 function escalonar(){
@@ -1873,6 +1887,7 @@ function ligar(raiz){
     S.leituras = S.leituras.filter(l => l.id !== id);
     gravarJSON(CHAVE, S.leituras);
     apagarFoto(id);
+    Sync.enfileirar({tipo:"apagar", id}); Sync.enviar();  // lápide até a fila subir: não volta na próxima junção
     aviso("Leitura apagada");
     irAba("biblioteca");
   });
@@ -1889,7 +1904,8 @@ function ligar(raiz){
   raiz.querySelectorAll("[data-apagar-tudo]").forEach(b => b.onclick = () => { S.confirmaApagar = true; desenhar(); });
   raiz.querySelectorAll("[data-cancela-apagar]").forEach(b => b.onclick = () => { S.confirmaApagar = false; desenhar(); });
   raiz.querySelectorAll("[data-confirma-apagar]").forEach(b => b.onclick = () => {
-    S.leituras.forEach(l => apagarFoto(l.id)); S.leituras = []; gravarJSON(CHAVE, []); S.confirmaApagar = false;
+    S.leituras.forEach(l => { apagarFoto(l.id); Sync.enfileirar({tipo:"apagar", id:l.id}); }); Sync.enviar();
+    S.leituras = []; gravarJSON(CHAVE, []); S.confirmaApagar = false;
     aviso("Tudo apagado"); desenhar();
   });
   const busca = document.getElementById("busca");
@@ -1976,7 +1992,17 @@ function ligarMedir(){
 function ligarConta(raiz){
   raiz.querySelectorAll("[data-suporte]").forEach(b => b.onclick = () => Plataforma.abrirExterno("mailto:" + suporte()));
   raiz.querySelectorAll("[data-trocar-email]").forEach(b => b.onclick = () => { S.conta.msg = null; S.conta.erros = 0; S.tela = "entrar"; desenhar(true); });
-  raiz.querySelectorAll("[data-sair-conta]").forEach(b => b.onclick = async () => { b.disabled = true; await Conta.sair(); paraEntrar(); });
+  raiz.querySelectorAll("[data-sair-conta]").forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = "Enviando leituras…";
+    const {pendentes} = await Sync.enviar();
+    if (!Conta.email()) return;
+    S.conta.saindo = {pendentes}; desenhar();
+  });
+  raiz.querySelectorAll("[data-sair-cancela]").forEach(b => b.onclick = () => { S.conta.saindo = null; desenhar(); });
+  raiz.querySelectorAll("[data-sair-mesmo], [data-sair-confirma]").forEach(b => b.onclick = async () => {
+    raiz.querySelectorAll("[data-sair-mesmo], [data-sair-confirma], [data-sair-cancela]").forEach(x => { x.disabled = true; });
+    await limparAparelho(); await Conta.sair(); paraEntrar();
+  });
   raiz.querySelectorAll("[data-excluir-conta]").forEach(b => b.onclick = () => { S.conta.excluindo = true; desenhar(); const i = document.getElementById("c-excluir"); if (i) i.focus(); });
   raiz.querySelectorAll("[data-excluir-cancela]").forEach(b => b.onclick = () => { S.conta.excluindo = false; desenhar(); });
   const form = document.getElementById("c-form");
@@ -1989,13 +2015,20 @@ function ligarConta(raiz){
       if (!vale()) return;
       ok.disabled = true; ok.textContent = "Excluindo…";
       const r = await Conta.excluir();
-      if (r === "ok"){ paraEntrar(); aviso("Conta excluída"); return; }
+      if (r === "ok"){ await limparAparelho(); paraEntrar(); aviso("Conta excluída"); return; }
       ok.disabled = false; ok.textContent = "Excluir conta";
       aviso(r === "sem_rede" ? "Sem internet agora. Tente com conexão." : "Não deu certo. Tente de novo.");
     };
   }
 }
-/* sair e excluir terminam aqui. A limpeza das leituras do aparelho chega com a sincronização (T08). */
+/* sair e excluir: o aparelho fica vazio (leituras, fotos, andamento, fila) e a memória também */
+async function limparAparelho(){
+  await Sync.limparLocal();
+  soltarVisor(); travarTela(false);
+  S.leituras = []; S.cur = nova(); S.detalhe = null; S.vista = null; S.aberto = {};
+  S.prefs = Object.assign({nome:"", assinatura:true, tema:"escuro", revisao:false}, lerJSON(CHAVE_PREFS, {}));
+}
+/* sair e excluir terminam aqui */
 function paraEntrar(){
   const email = S.conta.email;
   S.conta = contaVazia(); S.conta.email = email;
@@ -2083,6 +2116,32 @@ function entrou(){
   S.tela = "inicio"; S.aba = "inicio";
   desenhar(true);
   aviso("Pronto, você entrou");
+  sincronizar();
+}
+
+/* ---------- sincronização (T08) ----------
+   Ao entrar e ao abrir com sessão e rede: leituras sem dono entram na fila da primeira conta, a fila sobe,
+   a conta desce e junta com o aparelho. Apagada em outro aparelho some daqui, com a foto. */
+async function sincronizar(){
+  const email = Conta.email(); if (!email) return;
+  Sync.adotar(email, S.leituras);
+  if (!Plataforma.online()) return;
+  const lista = await Sync.sincronizar(S.leituras);   // a junção mantém a miniatura deste aparelho
+  if (!lista || Conta.email() !== email) return;
+  const ficam = new Set(lista.map(l => l.id)), marca = ls => ls.map(l => l.id + ":" + (l.atualizadaEm || l.quando)).join();
+  S.leituras.forEach(l => { if (!ficam.has(l.id)) apagarFoto(l.id); });
+  lista.sort((a, b) => (b.quando || 0) - (a.quando || 0));
+  const mudou = marca(lista) !== marca(S.leituras);
+  S.leituras = lista;
+  gravarJSON(CHAVE, S.leituras);
+  if (!mudou) return;
+  if (S.tela === "detalhe" && S.detalhe && !ficam.has(S.detalhe.id)){ S.tela = "inicio"; S.aba = "biblioteca"; }
+  if (S.tela !== "inicio" && S.tela !== "detalhe") return;   // no meio de uma leitura, a lista nova espera a próxima tela
+  // redesenha sem perder a rolagem nem o aviso que estiver na tela ("Pronto, você entrou")
+  const sc = app.querySelector(".scroll"), topo = sc ? sc.scrollTop : 0, avisos = [...app.querySelectorAll(".toast")];
+  desenhar();
+  const sc2 = app.querySelector(".scroll"); if (sc2) sc2.scrollTop = topo;
+  avisos.forEach(t => app.appendChild(t));
 }
 
 /* ---------- porta ----------
@@ -2132,7 +2191,8 @@ window.__copiloto.primeiraTela = {tela:S.tela, em:performance.now()};
 if (sessao){
   Conta.iniciar().then(r => { if (!r.sessao && !TELAS_CONTA.includes(S.tela)) paraEntrar(); });  // a sessão acabou de verdade
   conferir(true);
+  sincronizar();
 }
-Plataforma.aoMudarRede(on => { if (on) conferir(true); });
+Plataforma.aoMudarRede(on => { if (on){ conferir(true); if (Conta.email()) Sync.enviar(); } });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferir(false); });
 })();
