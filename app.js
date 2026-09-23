@@ -2124,12 +2124,15 @@ inputArquivo.addEventListener("change", async () => {
 
 window.__copiloto = {S, R, nova, arritmia, isquemia, qt, resumo, proximoPasso, desenhar};
 
-(async () => {
-  const {sessao} = await Conta.iniciar();
-  if (!sessao) S.tela = "entrar";
-  desenhar();
-  if (sessao) conferir(true);
-  Plataforma.aoMudarRede(on => { if (on) conferir(true); });
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferir(false); });
-})();
+// a primeira tela sai na hora, da sessão guardada no aparelho; a rede só confirma depois
+const {sessao} = Conta.guardada();
+if (!sessao) S.tela = "entrar";
+desenhar();
+window.__copiloto.primeiraTela = {tela:S.tela, em:performance.now()};
+if (sessao){
+  Conta.iniciar().then(r => { if (!r.sessao && !TELAS_CONTA.includes(S.tela)) paraEntrar(); });  // a sessão acabou de verdade
+  conferir(true);
+}
+Plataforma.aoMudarRede(on => { if (on) conferir(true); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferir(false); });
 })();

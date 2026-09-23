@@ -30,25 +30,36 @@
   // falha de rede: TypeError do fetch, ou o erro que o supabase-js devolve no lugar dele
   const deRede = e => !!e && (e instanceof TypeError || /FetchError|RetryableFetch/.test(e.name || "") || e.status === 0);
 
-  // sessão que o supabase-js deixou no aparelho: vale quando a rede não deixa confirmar
+  /* Sessão que ficou no aparelho, lida na hora, sem rede: JSON válido com refresh token e e-mail.
+     No supabase-js é a chave "copiloto.sessao"; na conta falsa, a sessão do servidor falso. */
   function emailGuardado(){
-    try { const s = JSON.parse(localStorage.getItem(CHAVE_SESSAO)); return (s && s.user && s.user.email) || (s && s.currentSession && s.currentSession.user && s.currentSession.user.email) || null; }
-    catch(_){ return null; }
+    try {
+      const s = falsa ? (window.__contaFalsa && window.__contaFalsa.estado.sessao) : JSON.parse(localStorage.getItem(CHAVE_SESSAO));
+      return s && s.refresh_token && s.user && s.user.email ? String(s.user.email) : null;
+    } catch(_){ return null; }
   }
 
-  /* Lê a sessão sem esperar rede: o getSession pode tentar renovar o token e, com sinal ruim,
-     demorar. Passou de 1,5 s ou deu erro, vale a sessão guardada no aparelho. */
+  /* A porta decide com isto, síncrono: a primeira tela sai sem esperar rede. */
+  function guardada(){
+    emailAtual = cliente() ? emailGuardado() : null;
+    return {sessao:emailAtual !== null, email:emailAtual};
+  }
+
+  /* Confirma a sessão por trás. O getSession pode renovar o token vencido e, sem sinal, insistir por até
+     30 s: erro de rede ou demora mantém a sessão guardada. Só uma resposta limpa sem sessão (o servidor
+     recusou a renovação e o supabase-js a apagou) diz que ela acabou. */
   async function iniciar(){
     const c = cliente();
     if (!c){ emailAtual = null; return {sessao:false, email:null}; }
-    let email = null;
+    const antes = emailGuardado();
     try {
-      const r = await comLimite(c.auth.getSession(), 1500);
+      const r = await comLimite(c.auth.getSession(), 10000);
       const s = r && r.data && r.data.session;
-      email = s ? (s.user && s.user.email) || emailGuardado() || "" : (r && r.error ? emailGuardado() : null);
-    } catch(_){ email = emailGuardado(); }
-    emailAtual = email;  // "" = sessão sem e-mail legível: conta como dentro
-    return {sessao:emailAtual !== null, email:emailAtual || null};
+      if (s) emailAtual = (s.user && s.user.email) || antes;
+      else if (!(r && r.error)) emailAtual = null;
+      else if (!deRede(r.error)) emailAtual = emailGuardado();  // erro de auth: vale o que o supabase-js deixou guardado
+    } catch(_){}
+    return {sessao:emailAtual !== null, email:emailAtual};
   }
 
   async function pedirCodigo(email){
@@ -104,7 +115,7 @@
       const r = await comLimite(c.auth.signOut(), 5000);
       if (r && r.error) throw r.error;
     } catch(_){
-      try { await c.auth.signOut({scope:"local"}); } catch(__){}
+      try { await comLimite(c.auth.signOut({scope:"local"}), 2000); } catch(__){}
       try { localStorage.removeItem(CHAVE_SESSAO); } catch(__){}
     }
   }
@@ -112,18 +123,18 @@
   async function excluir(){
     const c = cliente(); if (!c) return "falha";
     try {
-      const {error} = await c.functions.invoke("excluir-conta", {body:{}});
+      const {error} = await comLimite(c.functions.invoke("excluir-conta", {body:{}, timeout:8000}), 10000);
       if (error) return deRede(error) ? "sem_rede" : "falha";
     } catch(x){ return deRede(x) ? "sem_rede" : "falha"; }
     // o usuário já não existe no servidor: basta esquecer a sessão aqui
     emailAtual = null;
-    try { await c.auth.signOut({scope:"local"}); } catch(_){}
+    try { await comLimite(c.auth.signOut({scope:"local"}), 2000); } catch(_){}
     try { localStorage.removeItem(CHAVE_SESSAO); } catch(_){}
     return "ok";
   }
 
   window.Conta = {
-    iniciar, pedirCodigo, confirmar, conferirAcesso, sair, excluir,
+    guardada, iniciar, pedirCodigo, confirmar, conferirAcesso, sair, excluir,
     email(){ return emailAtual || null; },
     cliente
   };

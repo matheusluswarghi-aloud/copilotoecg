@@ -97,8 +97,19 @@
 
   const cliente = {
     auth: {
-      // como no supabase-js: a sessão é lida do aparelho, sem rede (enquanto o token vale)
+      // como no supabase-js: a sessão é lida do aparelho, sem rede, enquanto o token vale. Token vencido:
+      // renova; sem rede, insiste por uns segundos e devolve erro de rede mantendo a sessão guardada;
+      // renovação recusada (refresh_token "revogado") apaga a sessão e devolve null sem erro.
       async getSession(){
+        const s = estado.sessao;
+        if (s && s.expires_at * 1000 < Date.now()){
+          if (estado.offline){
+            await new Promise(r => setTimeout(r, 3000));
+            return {data: {session: null}, error: {name: "AuthRetryableFetchError", message: "Failed to fetch", status: 0}};
+          }
+          if (s.refresh_token === "revogado"){ estado.sessao = null; dispararSessao(null); return {data: {session: null}, error: null}; }
+          s.expires_at = Math.floor(Date.now() / 1000) + 3600;
+        }
         return {data: {session: estado.sessao || null}, error: null};
       },
       onAuthStateChange(fn){
