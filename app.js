@@ -703,7 +703,9 @@ function refHTML(id){
   const cap = `<figcaption>${tag}${f.legenda ? f.legenda + " " : ""}<span class="cred">${f.credito}</span></figcaption>`;
   if (f.tipo === "texto") return `<figure class="ref texto">${f.html}${cap}</figure>`;
   const car = f.caracteristicas ? `<ul class="car">${f.caracteristicas.map(c => `<li>${c}</li>`).join("")}</ul>` : "";
-  return `<figure class="ref"><button type="button" class="ref-img" data-ampliar="${id}" aria-label="Ampliar: ${f.alt}"><img src="${f.arquivo}" alt="${f.alt}" width="${f.largura}" height="${f.altura}" loading="lazy" decoding="async"></button>${cap}${car}</figure>`;
+  // imagens irmãs (Wellens tipo A junto do tipo B): cada uma respeita a própria validação
+  const junto = (f.junto || []).filter(refVisivel).map(refHTML).join("");
+  return `<figure class="ref"><button type="button" class="ref-img" data-ampliar="${id}" aria-label="Ampliar: ${f.alt}"><img src="${f.arquivo}" alt="${f.alt}" width="${f.largura}" height="${f.altura}" loading="lazy" decoding="async"></button>${cap}</figure>${junto}${car ? `<figure class="ref">${car}</figure>` : ""}`;
 }
 // a referência, ou (só no modo revisão) o lembrete do que falta
 function ref(id, falta){ return refVisivel(id) ? refHTML(id) : falta ? pendente(falta) : ""; }

@@ -51,23 +51,26 @@ textarea[hidden]{display:none}
 <script>
 const ONDE = {calibracao:"Etapa 2 · Onde encontro a calibração?", eletrodos:"Etapa 2 · Me ajude a conferir os eletrodos",
   "p-dii":"Etapa 3 · Como identificar o ritmo sinusal, passo 1", "p-polaridade":"Etapa 3 · Como identificar o ritmo sinusal, passo 2",
-  supra:"Etapa 7 · Me ajude a revisar os critérios de supra", wellens:"Etapa 7 · Padrões de alto risco · Não sei identificar",
+  supra:"Etapa 7 · Me ajude a revisar os critérios de supra", wellens:"Etapa 7 · Padrões de alto risco · Não sei identificar", "wellens-a":"Etapa 7 · Padrões de alto risco · Não sei identificar (junto do tipo B)",
   dewinter:"Etapa 7 · Padrões de alto risco · Não sei identificar", aslanger:"Etapa 7 · Padrões de alto risco · Não sei identificar",
   avr:"Etapa 7 · Padrões de alto risco · Não sei identificar", hiper:"Etapa 7 · Padrões de alto risco · Não sei identificar",
   "qrs-inicio-fim":"Etapas 6 e 8 · Não sei medir o QRS", "v1-brd-bre":"Etapa 8 · Bloqueio de ramo · Não tenho certeza",
   s1q3t3:"Etapa 10 · TEP · Não sei identificar", hk1:"Etapa 10 · Hipercalemia · Não sei identificar", hk2:"Etapa 10 · Hipercalemia · Não sei identificar",
   hpk1:"Etapa 10 · Hipocalemia · Não sei identificar", hpk2:"Etapa 10 · Hipocalemia · Não sei identificar"};
 const NOME = {calibracao:"Calibração impressa", eletrodos:"Eletrodos dos membros", "p-dii":"Onda P em DII", "p-polaridade":"Polaridade da P",
-  supra:"Critérios de supra de ST", wellens:"Padrão de Wellens", dewinter:"Padrão de de Winter", aslanger:"Padrão de Aslanger",
+  supra:"Critérios de supra de ST", wellens:"Padrão de Wellens", "wellens-a":"Padrão de Wellens tipo A", dewinter:"Padrão de de Winter", aslanger:"Padrão de Aslanger",
   avr:"Infra difuso de ST + supra em aVR", hiper:"Ondas T hiperagudas", "qrs-inicio-fim":"Início e fim do QRS", "v1-brd-bre":"V1 no BRD × V1 no BRE",
   s1q3t3:"Padrão S1Q3T3", hk1:"T apiculada (hipercalemia)", hk2:"Padrão sinusoidal (hipercalemia)", hpk1:"T achatada (hipocalemia)", hpk2:"Onda U (hipocalemia)"};
 const CHAVE = "copiloto.revisao-imagens";
 let R = {}; try { R = JSON.parse(localStorage.getItem(CHAVE)) || {}; } catch(_){}
 const salvar = () => { try { localStorage.setItem(CHAVE, JSON.stringify(R)); } catch(_){} };
-const ids = Object.keys(REFS).filter(id => REFS[id].tipo === "texto" || REFS[id].arquivo);
+// só o que ainda espera o Dr. Vitor; ?todas=1 mostra também o que já foi validado
+const todas = new URLSearchParams(location.search).has("todas");
+const ids = Object.keys(REFS).filter(id => (REFS[id].tipo === "texto" || REFS[id].arquivo) && (todas || !REFS[id].validada));
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function desenhar(){
+  if (!ids.length){ document.getElementById("lista").innerHTML = `<section class="item"><h2>Tudo validado</h2><p class="leg">Não há nenhuma imagem esperando a sua revisão.</p></section>`; document.querySelector(".barra").hidden = true; return; }
   document.getElementById("lista").innerHTML = ids.map((id, i) => {
     const f = REFS[id], r = R[id] || {};
     const corpo = f.tipo === "texto" ? `<div class="crit">${f.html}</div>`
