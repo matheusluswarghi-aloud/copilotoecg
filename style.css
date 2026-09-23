@@ -319,8 +319,8 @@ p{margin:0}
 .fig{width:100%;max-width:64px;height:auto}
 .field{display:flex;flex-direction:column;gap:6px}
 .field label{font-size:.82rem;color:var(--mute)}
-.field input[type=text]{appearance:none;border:1px solid var(--edge);background:rgba(0,0,0,.25);color:var(--ink);border-radius:12px;padding:11px 13px;font:400 1rem var(--sans);letter-spacing:-.02em;width:100%;font-variant-numeric:tabular-nums;box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
-:root[data-theme="light"] .field input[type=text]{background:#fff;box-shadow:none}
+.field input[type=text],.field input[type=email]{appearance:none;border:1px solid var(--edge);background:rgba(0,0,0,.25);color:var(--ink);border-radius:12px;padding:11px 13px;font:400 1rem var(--sans);letter-spacing:-.02em;width:100%;font-variant-numeric:tabular-nums;box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
+:root[data-theme="light"] .field input[type=text],:root[data-theme="light"] .field input[type=email]{background:#fff;box-shadow:none}
 .prog{display:grid;gap:4px;padding:2px 18px 10px;flex:none}
 .prog i{height:3px;border-radius:2px;background:rgba(255,255,255,.12);transition:background .3s}
 :root[data-theme="light"] .prog i{background:rgba(0,0,0,.1)}
@@ -396,3 +396,36 @@ p{margin:0}
 /* v5: item de checklist que o app já sabe (eixo da etapa 5) — mostrado, não clicável */
 .opt.fixo{cursor:default;opacity:.8}.opt.fixo small{display:block;font-size:.74rem;margin-top:2px}
 .opt:disabled:active{transform:none}
+
+/* ---------- conta: entrar, código, acesso encerrado (T07) ---------- */
+.porta .scroll{padding-top:14px;gap:16px}
+.porta .top .brand{flex:none}
+.porta-cab{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:6px 2px 2px}
+.porta-cab h1{font-size:1.7rem}
+.porta-pe{text-align:center;padding:2px 10px}
+.quebra{overflow-wrap:anywhere}
+.c-msg:empty{display:none}
+/* e-mail do suporte dentro do texto: parece link, e o dedo pega 44 px sem mexer na linha */
+.link{appearance:none;position:relative;border:0;background:none;padding:0;font:inherit;font-weight:500;color:inherit;text-align:left;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;cursor:pointer;overflow-wrap:anywhere}
+.link::after{content:"";position:absolute;left:-4px;right:-4px;top:-12px;bottom:-12px}
+/* seis caixas desenhadas; o input de verdade fica por cima, transparente, e recebe o toque, o colar e o autofill */
+.codigo{position:relative;display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.codigo .cx{height:60px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:1.6rem;color:var(--ink);background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi),inset 0 -1px 0 rgba(0,0,0,.28);transition:border-color .2s,box-shadow .25s}
+.codigo .cx.cheia{border-color:var(--edge-2)}
+.codigo .cx.ativa{border-color:rgba(164,124,255,.75);box-shadow:inset 0 1px 0 var(--hi),0 0 0 3px rgba(164,124,255,.18)}
+.codigo .cx.ativa:empty::after{content:"";width:1.5px;height:26px;background:var(--violet);animation:blink 1.1s steps(1) infinite}
+.codigo input{position:absolute;inset:0;z-index:1;width:100%;height:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:transparent;-webkit-text-fill-color:transparent;caret-color:transparent;font:16px var(--mono);letter-spacing:-.5em;cursor:text}
+.codigo input:focus-visible{outline:none}
+.codigo input:disabled{cursor:not-allowed}
+.codigo:has(input:disabled) .cx{opacity:.55}
+.codigo.erro .cx{border-color:rgba(240,87,154,.6)}
+.codigo.erro{animation:treme .38s var(--ease)}
+@keyframes treme{0%,100%{transform:none}20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(2px)}}
+.c-status{min-height:22px;font-size:.9rem;text-align:center}
+.c-status .erro{color:var(--mag)}
+.c-acoes{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.textbtn[disabled]{opacity:.6;cursor:default;font-variant-numeric:tabular-nums}
+.textbtn.perigo{color:var(--mag);align-self:flex-start}
+.conta-email{font-size:1.02rem;font-weight:500;letter-spacing:-.01em}
+.nw{white-space:nowrap}
+.btn.danger[disabled]{opacity:.4;cursor:not-allowed}

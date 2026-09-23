@@ -50,8 +50,11 @@ const S = {
   prefs:Object.assign({nome:"", assinatura:true, tema:"escuro", revisao:false}, lerJSON(CHAVE_PREFS, {})),
   visor:null, vista:null, detalhe:null, aberto:{}, medir:null, calc:{},
   dock:"aberto", fotoOrigem:null, verVolta:"seq",
-  filtro:{busca:"", motivo:"todas", atencao:false}, guiaAba:"calc", guiaFoco:null
+  filtro:{busca:"", motivo:"todas", atencao:false}, guiaAba:"calc", guiaFoco:null,
+  conta:contaVazia()
 };
+/* porta de entrada (T07): e-mail digitado, resposta do último pedido, erros de código, relógio do reenviar */
+function contaVazia(){ return {email:"", msg:null, enviando:false, verificando:false, erros:0, reenviarEm:0, excluindo:false}; }
 function aplicarTema(){ document.documentElement.setAttribute("data-theme", S.prefs.tema === "claro" ? "light" : "dark"); }
 aplicarTema();
 
@@ -946,6 +949,7 @@ function config(){
   return `<div class="screen">
   <div class="top"><button class="icobtn ghost" type="button" data-aba="inicio" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Este aparelho</small><strong>Configurações</strong></div></div>
   <div class="scroll stagger">
+    ${cartaoConta()}
     <div class="card"><div class="field"><label for="p-nome">Como o Copiloto deve chamar você</label><input type="text" id="p-nome" value="${(p.nome || "").replace(/"/g, "&quot;")}" placeholder="Dr. Vitor" autocomplete="off"></div>
       <p class="tiny mute">Aparece na saudação e, se quiser, no fim do laudo.</p></div>
     <div class="card">
@@ -963,6 +967,89 @@ function assinatura(){
   const n = (S.prefs.nome || "").trim();
   if (!S.prefs.assinatura || !n) return "";
   return `\n\n— ${n} · ${new Date().toLocaleDateString("pt-BR")}`;
+}
+
+/* ---------- conta: entrar, código, acesso encerrado ----------
+   Tom de plantão: frase curta, sem vender nada. Nenhuma tela daqui mostra preço, compra ou link de venda
+   (regra 3.1.1 da Apple): quem não tem acesso é mandado ao suporte, nunca a um checkout. */
+const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;"}[c]));
+const suporte = () => (window.COPILOTO_CONFIG || {}).suporte || "";
+const linkSuporte = () => `<button type="button" class="link" data-suporte="1">${esc(suporte())}</button>`;
+const TELAS_CONTA = ["entrar", "codigo", "encerrado"];
+const MSG_ENTRAR = {
+  sem_acesso:() => ins("warn", `Não encontramos uma compra com este <span class="nw">e-mail.</span>`, `Use o mesmo e-mail da compra na Hotmart. Se precisar, fale com o suporte: ${linkSuporte()}`),
+  muitos_pedidos:() => ins("warn", "Muitos pedidos seguidos. Espere alguns minutos."),
+  sem_rede:() => ins("info", "Sem internet agora.", "Para entrar pela primeira vez o Copiloto precisa de conexão."),
+  email_invalido:() => ins("bad", "Confira o e-mail."),
+  falha:() => ins("bad", "Não deu certo. Tente de novo.")
+};
+const MSG_CODIGO = {
+  codigo_errado:"Código incorreto",
+  codigo_expirado:"Código expirado. Peça um código novo.",
+  sem_rede:"Sem internet agora. Tente de novo quando o sinal voltar.",
+  falha:"Não deu certo. Tente de novo."
+};
+function telaEntrar(){
+  const c = S.conta, m = c.msg && MSG_ENTRAR[c.msg];
+  return `<div class="screen porta">
+  <div class="top"><div class="brand">${marca()}<strong>Copiloto</strong></div><div class="t"></div></div>
+  <div class="scroll stagger">
+    <div class="porta-cab"><h1>Entre com o <span class="nw">e-mail</span> da sua compra</h1><p class="ink2">Você recebe um código de 6 dígitos. Sem senha.</p></div>
+    <form class="card" id="c-form" novalidate>
+      <div class="field"><label for="c-email">E-mail</label><input type="email" id="c-email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="nome@exemplo.com" value="${esc(c.email)}"></div>
+      <button class="btn primary wide" type="submit" id="c-enviar" ${c.enviando ? "disabled" : ""}>${c.enviando ? "Enviando…" : "Receber código"}</button>
+    </form>
+    <div class="c-msg" id="c-msg" aria-live="polite">${m ? m() : ""}</div>
+    <p class="tiny mute porta-pe">Depois de entrar, o Copiloto abre mesmo sem sinal.</p>
+  </div></div>`;
+}
+const bloqueado = () => S.conta.erros >= 5;
+function statusCodigo(){
+  const c = S.conta;
+  if (c.verificando) return `<span class="mute">Conferindo…</span>`;
+  if (bloqueado()) return `<span class="erro">Peça um código novo.</span>`;
+  return c.msg && MSG_CODIGO[c.msg] ? `<span class="erro">${MSG_CODIGO[c.msg]}</span>` : "";
+}
+const faltaReenviar = () => Math.max(0, Math.ceil((S.conta.reenviarEm - Date.now()) / 1000));
+const textoReenviar = () => faltaReenviar() ? `Reenviar código em ${faltaReenviar()} s` : "Reenviar código";
+function telaCodigo(){
+  const c = S.conta;
+  return `<div class="screen porta">
+  <div class="top"><button class="icobtn ghost" type="button" data-trocar-email="1" aria-label="Trocar e-mail">${I.voltar}</button><div class="brand">${marca()}<strong>Copiloto</strong></div><div class="t"></div></div>
+  <div class="scroll stagger">
+    <div class="porta-cab"><h1>Digite o código</h1><p class="ink2">Enviamos um código de 6 dígitos para <b class="quebra">${esc(c.email)}</b></p></div>
+    <div class="codigo" id="c-codigo">
+      <input id="c-otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" aria-label="Código de 6 dígitos" ${bloqueado() || c.verificando ? "disabled" : ""}>
+      ${Array.from({length:6}, () => `<span class="cx" aria-hidden="true"></span>`).join("")}
+    </div>
+    <p class="c-status" id="c-status" aria-live="polite">${statusCodigo()}</p>
+    <div class="c-acoes"><button class="textbtn" type="button" id="c-reenviar" ${faltaReenviar() ? "disabled" : ""}>${textoReenviar()}</button><button class="textbtn" type="button" data-trocar-email="1">Trocar e-mail</button></div>
+    <p class="tiny mute porta-pe">Não chegou? Confira a caixa de spam. O código vale por 10 minutos.</p>
+  </div></div>`;
+}
+function telaEncerrado(){
+  const e = Conta.email();
+  return `<div class="screen porta">
+  <div class="top"><div class="brand">${marca()}<strong>Copiloto</strong></div><div class="t"></div></div>
+  <div class="scroll stagger">
+    <div class="porta-cab"><span class="tag bad">Acesso encerrado</span><h1>Seu acesso ao Copiloto foi encerrado.</h1>
+      <p class="ink2">Se acha que é um engano, fale com o suporte: ${linkSuporte()}</p></div>
+    <button class="btn wide" type="button" data-sair-conta="1">Sair</button>
+    ${e ? `<p class="tiny mute porta-pe">Conta: ${esc(e)}</p>` : ""}
+  </div></div>`;
+}
+/* Configurações: a conta vem primeiro. Excluir pede a palavra digitada, não um toque só. */
+function cartaoConta(){
+  const e = Conta.email(), c = S.conta;
+  return `<div class="card conta">
+    <div class="sec" style="margin:0"><h3>Conta</h3><span class="tag ok">conectada</span></div>
+    <p class="conta-email quebra">${esc(e || "—")}</p>
+    <button class="btn wide" type="button" data-sair-conta="1">Sair</button>
+    ${c.excluindo ? `${ins("bad", "Excluir sua conta?", "Apaga sua conta e as leituras guardadas nela. Seu acesso de compra continua válido: você pode entrar de novo depois.")}
+      <div class="field"><label for="c-excluir">Digite EXCLUIR para confirmar</label><input type="text" id="c-excluir" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+      <div class="row2"><button class="btn" type="button" data-excluir-cancela="1">Cancelar</button><button class="btn danger" type="button" id="c-excluir-ok" disabled>Excluir conta</button></div>`
+    : `<button class="textbtn perigo" type="button" data-excluir-conta="1">Excluir minha conta</button>`}
+  </div>`;
 }
 
 /* ---------- etapa 1: o paciente ---------- */
@@ -1715,7 +1802,8 @@ function desenhar(inteira){
     return;
   }
   const telas = { inicio:() => ({inicio, biblioteca, guia, config}[S.aba] || inicio)(),
-    motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo };
+    motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo,
+    entrar:telaEntrar, codigo:telaCodigo, encerrado:telaEncerrado };
   soltarVisor(); // a tela inteira é refeita: o visor que ficaria órfão levaria o S.vista junto no próximo resize
   soltarControles(app);
   app.innerHTML = (telas[S.tela] || telas.inicio)();
@@ -1728,6 +1816,7 @@ function desenhar(inteira){
   if (S.tela === "seq" && S.cur.tela && S.dock !== "pilula") montarVisor("#visor", {modo:"livre"});
   if (S.tela === "medir") ligarMedir();
   if (S.tela === "seq") desenharMiolo(); // o miolo nasce vazio na casca
+  if (S.tela === "codigo") montarCodigo();
   // atalho do início: a calculadora pedida encosta no topo. A conta é de layout (offsetTop), porque a
   // entrada escalonada ainda está deslocando o cartão e o scrollIntoView pararia uns 12 px acima.
   if (S.guiaFoco){ const c = document.getElementById("calc-" + S.guiaFoco); if (c) c.parentNode.scrollTop = c.offsetTop - c.parentNode.offsetTop; S.guiaFoco = null; }
@@ -1810,6 +1899,7 @@ function ligar(raiz){
     const b2 = document.getElementById("busca"); if (b2){ b2.focus(); try { b2.setSelectionRange(pos, pos); } catch(_){} }
   };
   ligarOpts(raiz);
+  ligarConta(raiz);
   // etapa 4: trocar de método na ajuda da FC (régua no papel · contar em 10 s · medir na foto)
   raiz.querySelectorAll("[data-fcaba]").forEach(b => b.onclick = () => { S.aberto.calcfcAba = b.dataset.fcaba; manterRolagem(desenhar); });
 
@@ -1882,6 +1972,133 @@ function ligarMedir(){
   };
 }
 
+/* ---------- conta: comportamento das telas ---------- */
+function ligarConta(raiz){
+  raiz.querySelectorAll("[data-suporte]").forEach(b => b.onclick = () => Plataforma.abrirExterno("mailto:" + suporte()));
+  raiz.querySelectorAll("[data-trocar-email]").forEach(b => b.onclick = () => { S.conta.msg = null; S.conta.erros = 0; S.tela = "entrar"; desenhar(true); });
+  raiz.querySelectorAll("[data-sair-conta]").forEach(b => b.onclick = async () => { b.disabled = true; await Conta.sair(); paraEntrar(); });
+  raiz.querySelectorAll("[data-excluir-conta]").forEach(b => b.onclick = () => { S.conta.excluindo = true; desenhar(); const i = document.getElementById("c-excluir"); if (i) i.focus(); });
+  raiz.querySelectorAll("[data-excluir-cancela]").forEach(b => b.onclick = () => { S.conta.excluindo = false; desenhar(); });
+  const form = document.getElementById("c-form");
+  if (form) form.onsubmit = e => { e.preventDefault(); enviarEmail(); };
+  const conf = document.getElementById("c-excluir"), ok = document.getElementById("c-excluir-ok");
+  if (conf && ok){
+    const vale = () => conf.value.trim() === "EXCLUIR";
+    conf.oninput = () => { ok.disabled = !vale(); };
+    ok.onclick = async () => {
+      if (!vale()) return;
+      ok.disabled = true; ok.textContent = "Excluindo…";
+      const r = await Conta.excluir();
+      if (r === "ok"){ paraEntrar(); aviso("Conta excluída"); return; }
+      ok.disabled = false; ok.textContent = "Excluir conta";
+      aviso(r === "sem_rede" ? "Sem internet agora. Tente com conexão." : "Não deu certo. Tente de novo.");
+    };
+  }
+}
+/* sair e excluir terminam aqui. A limpeza das leituras do aparelho chega com a sincronização (T08). */
+function paraEntrar(){
+  const email = S.conta.email;
+  S.conta = contaVazia(); S.conta.email = email;
+  soltarVisor(); S.tela = "entrar"; S.aba = "inicio"; S.confirmaApagar = false; S.editando = null;
+  desenhar(true);
+}
+async function enviarEmail(){
+  const c = S.conta, input = document.getElementById("c-email");
+  if (c.enviando || !input) return;
+  c.email = input.value.trim().toLowerCase();
+  c.enviando = true; c.msg = null;
+  const btn = document.getElementById("c-enviar"), msg = document.getElementById("c-msg");
+  if (btn){ btn.disabled = true; btn.textContent = "Enviando…"; }
+  if (msg) msg.innerHTML = "";
+  const r = await Conta.pedirCodigo(c.email);
+  c.enviando = false;
+  if (r === "ok"){ c.msg = null; c.erros = 0; c.reenviarEm = Date.now() + 60000; S.tela = "codigo"; desenhar(true); return; }
+  c.msg = r;
+  if (S.tela !== "entrar") return;
+  const btn2 = document.getElementById("c-enviar"), msg2 = document.getElementById("c-msg");
+  if (btn2){ btn2.disabled = false; btn2.textContent = "Receber código"; }
+  if (msg2){ msg2.innerHTML = (MSG_ENTRAR[r] || MSG_ENTRAR.falha)(); ligarConta(msg2); }
+}
+/* código: um input só, transparente por cima das 6 caixas — colar e o preenchimento automático do
+   iPhone ("one-time-code") entregam os 6 dígitos de uma vez. As caixas só espelham o valor. */
+let relogio = null;
+function montarCodigo(){
+  const otp = document.getElementById("c-otp"), caixa = document.getElementById("c-codigo");
+  if (!otp) return;
+  const cxs = [...caixa.querySelectorAll(".cx")];
+  const pintar = () => {
+    const v = otp.value, foco = document.activeElement === otp;
+    cxs.forEach((cx, i) => { cx.textContent = v[i] || ""; cx.classList.toggle("cheia", i < v.length); cx.classList.toggle("ativa", foco && i === Math.min(v.length, 5)); });
+  };
+  otp.oninput = () => {
+    const v = otp.value.replace(/\D/g, "").slice(0, 6);
+    if (otp.value !== v) otp.value = v;
+    caixa.classList.remove("erro");
+    if (S.conta.msg){ S.conta.msg = null; document.getElementById("c-status").innerHTML = statusCodigo(); }
+    pintar();
+    if (v.length === 6) confirmarCodigo(v);
+  };
+  otp.onfocus = otp.onblur = otp.__pintar = pintar;
+  otp.onkeyup = otp.onclick = () => { try { const n = otp.value.length; otp.setSelectionRange(n, n); } catch(_){} };  // o cursor fica sempre no fim
+  pintar();
+  if (!otp.disabled) setTimeout(() => { if (document.activeElement !== otp) otp.focus(); }, 80);
+  const reenviar = document.getElementById("c-reenviar");
+  reenviar.onclick = async () => {
+    if (faltaReenviar() || S.conta.enviando) return;
+    S.conta.enviando = true; reenviar.disabled = true; reenviar.textContent = "Enviando…";
+    const r = await Conta.pedirCodigo(S.conta.email);
+    S.conta.enviando = false;
+    if (r === "ok"){ S.conta.reenviarEm = Date.now() + 60000; S.conta.erros = 0; S.conta.msg = null; if (S.tela === "codigo") desenhar(true); aviso("Código reenviado"); return; }
+    reenviar.disabled = false; reenviar.textContent = textoReenviar();
+    aviso(r === "sem_rede" ? "Sem internet agora" : r === "muitos_pedidos" ? "Muitos pedidos seguidos. Espere alguns minutos." : "Não deu certo. Tente de novo.");
+  };
+  clearInterval(relogio);
+  relogio = setInterval(() => {
+    const b = document.getElementById("c-reenviar");
+    if (!b || S.tela !== "codigo"){ clearInterval(relogio); relogio = null; return; }
+    if (S.conta.enviando) return;
+    b.textContent = textoReenviar(); b.disabled = !!faltaReenviar();
+  }, 1000);
+}
+async function confirmarCodigo(v){
+  const c = S.conta;
+  if (c.verificando || bloqueado()) return;
+  const otp = document.getElementById("c-otp"), caixa = document.getElementById("c-codigo"), st = document.getElementById("c-status");
+  c.verificando = true; c.msg = null; st.innerHTML = statusCodigo(); otp.disabled = true;
+  const r = await Conta.confirmar(c.email, v);
+  c.verificando = false;
+  if (r === "ok"){ entrou(); return; }
+  if (S.tela !== "codigo") return;
+  if (r === "codigo_errado") c.erros++;
+  c.msg = r;
+  otp.value = ""; otp.disabled = bloqueado();
+  st.innerHTML = statusCodigo();
+  if (r === "codigo_errado"){ caixa.classList.remove("erro"); void caixa.offsetWidth; caixa.classList.add("erro"); }
+  if (!otp.disabled) otp.focus();
+  otp.__pintar();
+}
+function entrou(){
+  S.conta = contaVazia();
+  ultimaConferencia = Date.now();  // acabou de provar o acesso: o pedir-codigo só manda código a quem tem
+  S.tela = "inicio"; S.aba = "inicio";
+  desenhar(true);
+  aviso("Pronto, você entrou");
+}
+
+/* ---------- porta ----------
+   Sem sessão: Entrar. Com sessão: o app abre na hora, sem esperar rede, e o acesso é conferido por
+   trás. Só um false do servidor leva a "acesso encerrado"; sem rede, erro ou demora (null), nada muda.
+   Confere de novo quando a rede volta e quando o app volta para a frente (esta, no máximo a cada 10 min). */
+let ultimaConferencia = 0;
+async function conferir(sempre){
+  if (!Conta.email() || TELAS_CONTA.includes(S.tela)) return;
+  if (!sempre && Date.now() - ultimaConferencia < 10 * 6e4) return;
+  ultimaConferencia = Date.now();
+  const r = await Conta.conferirAcesso();
+  if (r === null){ ultimaConferencia = 0; return; }  // não deu para saber: a próxima volta tenta de novo
+  if (r === false && Conta.email() && !TELAS_CONTA.includes(S.tela)){ soltarVisor(); S.tela = "encerrado"; desenhar(true); }
+}
+
 /* ---------- entrada da foto ---------- */
 inputArquivo.addEventListener("change", async () => {
   const f = inputArquivo.files && inputArquivo.files[0];
@@ -1907,5 +2124,12 @@ inputArquivo.addEventListener("change", async () => {
 
 window.__copiloto = {S, R, nova, arritmia, isquemia, qt, resumo, proximoPasso, desenhar};
 
-desenhar();
+(async () => {
+  const {sessao} = await Conta.iniciar();
+  if (!sessao) S.tela = "entrar";
+  desenhar();
+  if (sessao) conferir(true);
+  Plataforma.aoMudarRede(on => { if (on) conferir(true); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferir(false); });
+})();
 })();

@@ -38,12 +38,27 @@
     if (estado.offline) throw new TypeError("Failed to fetch");
   }
 
+  // O servidor falso sobrevive ao recarregar (T07): a sessão fica "guardada no aparelho" como a do
+  // supabase-js, e o que o teste ligou (acesso, offline, e-mails, leituras) continua valendo depois do
+  // reload. Vive no sessionStorage da aba: some quando o navegador fecha. As chamadas não persistem.
+  const CHAVE_FALSA = "copiloto.contaFalsa";
+  try {
+    const g = JSON.parse(sessionStorage.getItem(CHAVE_FALSA));
+    if (g){
+      Object.assign(estado, {acesso:g.acesso, offline:g.offline, codigo:g.codigo, sessao:g.sessao, leituras:g.leituras || []});
+      estado.emailsComAcesso = new Set(g.emailsComAcesso || []);
+    }
+  } catch(_){}
+  addEventListener("pagehide", () => {
+    try { sessionStorage.setItem(CHAVE_FALSA, JSON.stringify(Object.assign({}, estado, {emailsComAcesso:[...estado.emailsComAcesso], chamadas:undefined}))); } catch(_){}
+  });
+
   // &logado=1: já nasce com sessão de medico@teste.com, com acesso — atalho para os testes que
-  // não precisam repetir o fluxo de login inteiro.
+  // não precisam repetir o fluxo de login inteiro (e volta logado a cada reload).
   if (parametros.get("logado") === "1"){
     const email = "medico@teste.com";
     estado.emailsComAcesso.add(email);
-    estado.sessao = criarSessao(email);
+    if (!estado.sessao) estado.sessao = criarSessao(email);
   }
 
   // imita o query builder do supabase-js sobre "leituras": encadeia filtros e só executa quando
@@ -82,8 +97,8 @@
 
   const cliente = {
     auth: {
+      // como no supabase-js: a sessão é lida do aparelho, sem rede (enquanto o token vale)
       async getSession(){
-        await falhaSeOffline();
         return {data: {session: estado.sessao || null}, error: null};
       },
       onAuthStateChange(fn){
@@ -103,9 +118,11 @@
         dispararSessao(sessao);
         return {data: {session: sessao, user: sessao.user}, error: null};
       },
-      async signOut(){
-        estado.chamadas.push({metodo: "signOut"});
-        await falhaSeOffline();
+      // scope "local" só esquece a sessão no aparelho, sem rede (como no supabase-js)
+      async signOut(opcoes){
+        const escopo = (opcoes && opcoes.scope) || "global";
+        estado.chamadas.push({metodo: "signOut", escopo});
+        if (escopo !== "local") await falhaSeOffline();
         estado.sessao = null;
         dispararSessao(null);
         return {error: null};
