@@ -82,6 +82,7 @@
   // o banco preenche user_id sozinho (padrão auth.uid()); a chave é (user_id, id)
   async function subir(c, ops){
     for (let i = 0; i < ops.length; i += LOTE){
+      if (parado) return;
       const r = await comLimite(c.from("leituras").upsert(ops.slice(i, i + LOTE).map(linha), {onConflict:"user_id,id"}), LIMITE);
       if (r && r.error) throw r.error;
       tirarDaFila(ops.slice(i, i + LOTE));
@@ -98,8 +99,9 @@
 
   /* Uma subida de cada vez: quem pede durante outra espera a vez e roda de novo (pode ter entrado coisa
      nova na fila). Sem cliente, sem sessão ou sem rede, a fila fica como está. */
-  let corrente = null;
+  let corrente = null, parado = false;
   function enviar(){
+    if (parado) return Promise.resolve({enviadas:0, pendentes:pendentes()});
     if (corrente) return corrente.then(() => enviar());
     corrente = (async () => {
       const c = window.Conta && Conta.cliente(), eu = c && Conta.email();
@@ -111,6 +113,14 @@
     })().finally(() => { corrente = null; });
     return corrente;
   }
+
+  /* excluir a conta: nada pode subir enquanto ela é apagada no servidor (recriaria leituras com o id do
+     usuário apagado). parar() barra as subidas novas e espera a que está no ar; retomar() libera. */
+  async function parar(){
+    parado = true;
+    if (corrente) await corrente;
+  }
+  function retomar(){ parado = false; }
 
   /* todas as leituras da conta, inclusive as apagadas, no formato do aparelho. Falha → rejeita. */
   async function baixar(){
@@ -175,6 +185,6 @@
     } catch(_){}
   }
 
-  window.Sync = {juntar, enfileirar, enviar, baixar, pendentes, limparLocal, sincronizar, adotar,
+  window.Sync = {juntar, enfileirar, enviar, baixar, pendentes, limparLocal, sincronizar, adotar, parar, retomar,
     dono(){ return ler(DONO, null); }};
 })();

@@ -1,14 +1,16 @@
 /* Copiloto de ECG — conta.js
    A sessão do aluno: pedir o código, confirmar, conferir se o acesso continua, sair e excluir.
    O cliente é o supabase-js (sessão guardada no localStorage, chave "copiloto.sessao") ou, com
-   ?conta=falsa, o falso em memória da conta-falsa.js. Sem config preenchida (antes da T09) e sem
-   conta falsa, não há cliente: o app abre em Entrar e todo pedido devolve "falha".
+   ?conta=falsa no desenvolvimento local, o falso em memória da conta-falsa.js. Sem config preenchida
+   (antes da T09) e sem conta falsa, não há cliente: o app abre em Entrar e todo pedido devolve "falha".
    Regra do plantão: rede ruim nunca derruba. Só um false explícito do servidor encerra o acesso. */
 (function(){
   "use strict";
   const cfg = window.COPILOTO_CONFIG || {};
   const CHAVE_SESSAO = "copiloto.sessao";
-  const falsa = new URLSearchParams(location.search).get("conta") === "falsa";
+  // conta falsa só no desenvolvimento local, com a mesma trava da conta-falsa.js: fora dele ?conta=falsa é ignorado
+  const local = location.protocol === "http:" && (location.hostname === "localhost" || location.hostname === "127.0.0.1");
+  const falsa = local && new URLSearchParams(location.search).get("conta") === "falsa";
 
   let cli = null, emailAtual = null;
   function cliente(){

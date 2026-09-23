@@ -3,11 +3,15 @@
    testes rodarem sem rede nem projeto real. Imita só o que conta.js (T07) usa do supabase-js:
    auth.getSession/onAuthStateChange/verifyOtp/signOut, rpc("tem_acesso"),
    from("leituras").select/upsert/eq/gt/order/range e functions.invoke("pedir-codigo"|"excluir-conta").
-   Expõe window.__contaFalsa = {cliente, estado}, com o estado controlável pelos testes. */
+   Expõe window.__contaFalsa = {cliente, estado}, com o estado controlável pelos testes.
+   Só existe no desenvolvimento local (http em localhost ou 127.0.0.1): em qualquer outro endereço
+   (o Pages, o app instalado, o Capacitor) ?conta=falsa não faz nada e o arquivo fica inerte. O host
+   não se falsifica pela URL, então um link repassado nunca entra sem compra. */
 (function(){
   "use strict";
+  const local = location.protocol === "http:" && (location.hostname === "localhost" || location.hostname === "127.0.0.1");
   const parametros = new URLSearchParams(location.search);
-  if (parametros.get("conta") !== "falsa") return;
+  if (!local || parametros.get("conta") !== "falsa") return;
 
   const normalizarEmail = e => String(e || "").trim().toLowerCase();
 

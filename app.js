@@ -2017,8 +2017,10 @@ function ligarConta(raiz){
     ok.onclick = async () => {
       if (!vale()) return;
       ok.disabled = true; ok.textContent = "Excluindo…";
+      await Sync.parar();  // espera a subida no ar e barra as novas: nenhuma recria leituras na conta apagada
       const r = await Conta.excluir();
-      if (r === "ok"){ await limparAparelho(); paraEntrar(); aviso("Conta excluída"); return; }
+      if (r === "ok"){ await limparAparelho(); Sync.retomar(); paraEntrar(); aviso("Conta excluída"); return; }
+      Sync.retomar();
       ok.disabled = false; ok.textContent = "Excluir conta";
       aviso(r === "sem_rede" ? "Sem internet agora. Tente com conexão." : "Não deu certo. Tente de novo.");
     };
