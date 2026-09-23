@@ -190,7 +190,7 @@ function arritmia(B){
       depois:ajuda("medirqrs", "Não sei medir o QRS") + (S.aberto.medirqrs ? `<div class="helpbox">
         ${S.cur.tela ? `<p>Meça o QRS com a régua na foto, do começo ao fim do complexo. O app diz se passa de 120 ms (3 quadradinhos).</p><button class="btn small" type="button" data-medir="qrs">${I.regua}Medir o QRS na foto</button>`
           : `<p>Conte os quadradinhos do começo ao fim do QRS: a partir de 3 quadradinhos (120 ms), ele é largo.</p>`}
-        ${pendente("Orientação do Dr. Vitor sobre como medir o QRS")}</div>` : "")});
+        ${ref("qrs-inicio-fim", "")}${pendente("Orientação do Dr. Vitor sobre como medir o QRS")}</div>` : "")});
     return !!r.qrs;
   };
 
@@ -695,7 +695,27 @@ const terrHTML = () => `<div class="terr">${TERR.map(([, b, s]) => `<div><b>${b}
 const revisao = () => !!S.prefs.revisao;
 function pendente(o){ return revisao() ? `<div class="pendente"><span class="tag">a enviar</span> ${o}</div>` : ""; }
 // link de ajuda cujo único conteúdo seria a imagem pendente: existe apenas em modo revisão
-function ajudaRev(chave, rotulo, conteudo){ return revisao() ? ajuda(chave, rotulo) + (S.aberto[chave] ? `<div class="helpbox">${conteudo}</div>` : "") : ""; }
+function ajudaRev(chave, rotulo, conteudo, ids){ return revisao() || (ids || []).some(refVisivel) ? ajuda(chave, rotulo) + (S.aberto[chave] ? `<div class="helpbox">${conteudo}</div>` : "") : ""; }
+/* referências (referencias.js): fora do modo revisão só aparecem as que o Dr. Vitor já validou */
+const refVisivel = id => { const f = REFS[id]; return !!f && (f.tipo === "texto" || !!f.arquivo) && (f.validada || revisao()); };
+function refHTML(id){
+  const f = REFS[id], tag = f.validada ? "" : `<span class="tag">a validar</span> `;
+  const cap = `<figcaption>${tag}${f.legenda ? f.legenda + " " : ""}<span class="cred">${f.credito}</span></figcaption>`;
+  if (f.tipo === "texto") return `<figure class="ref texto">${f.html}${cap}</figure>`;
+  const car = f.caracteristicas ? `<ul class="car">${f.caracteristicas.map(c => `<li>${c}</li>`).join("")}</ul>` : "";
+  return `<figure class="ref"><button type="button" class="ref-img" data-ampliar="${id}" aria-label="Ampliar: ${f.alt}"><img src="${f.arquivo}" alt="${f.alt}" width="${f.largura}" height="${f.altura}" loading="lazy" decoding="async"></button>${cap}${car}</figure>`;
+}
+// a referência, ou (só no modo revisão) o lembrete do que falta
+function ref(id, falta){ return refVisivel(id) ? refHTML(id) : falta ? pendente(falta) : ""; }
+function ampliar(id){
+  const f = REFS[id]; if (!f) return;
+  const o = document.createElement("div");
+  o.className = "ampliada"; o.setAttribute("role", "dialog"); o.setAttribute("aria-label", f.alt);
+  o.innerHTML = `<div class="ampliada-rolo"><img src="${f.arquivo}" alt="${f.alt}"></div><p class="tiny">${f.legenda} <span class="cred">${f.credito}</span></p><button class="btn small" type="button">Fechar</button>`;
+  o.onclick = () => o.remove();
+  o.querySelector(".ampliada-rolo").onclick = e => e.stopPropagation();
+  document.body.appendChild(o);
+}
 /* "↓ continua" mora no rodapé, em fluxo: linha própria acima do botão, nunca por cima do conteúdo.
    O botão ocupa a linha inteira (44 px de alvo de toque); o desenho da pílula fica centrado dentro. */
 function pilula(){ return `<button class="continua" id="continua" type="button" hidden><span>${I.baixo}continua</span></button>`; }
@@ -956,7 +976,7 @@ function config(){
     <div class="card">
       <div class="toggle"><div class="l"><strong>Assinar o laudo</strong><span>Acrescenta seu nome e a data ao copiar</span></div><button class="switch" type="button" role="switch" aria-checked="${!!p.assinatura}" data-pref="assinatura"></button></div>
       <div class="toggle"><div class="l"><strong>Tema claro</strong><span>Para ambientes muito iluminados</span></div><button class="switch" type="button" role="switch" aria-checked="${p.tema === "claro"}" data-pref="tema"></button></div>
-      <div class="toggle"><div class="l"><strong>Modo revisão</strong><span>Mostra os lembretes das imagens que o Dr. Vitor ainda vai enviar</span></div><button class="switch" type="button" role="switch" aria-checked="${!!p.revisao}" data-pref="revisao"></button></div>
+      <div class="toggle"><div class="l"><strong>Modo revisão</strong><span>Mostra as imagens que o Dr. Vitor ainda não validou e os lembretes do que falta</span></div><button class="switch" type="button" role="switch" aria-checked="${!!p.revisao}" data-pref="revisao"></button></div>
     </div>
     <div class="card"><h3>Dados</h3><p class="small mute">${n} leitura${n === 1 ? "" : "s"} neste aparelho. Os laudos ficam guardados também na sua conta; as fotos, só aqui.</p>
       <button class="btn danger" type="button" data-apagar-tudo="1" ${n ? "" : "disabled"}>${I.lixo}Apagar todas as leituras</button>
@@ -1266,7 +1286,7 @@ const ETAPAS = {
     B.texto(`<p class="small mute">Vamos confirmar rapidamente se o traçado é adequado para interpretação.</p>`);
     B.escolha("cal", {sec:"2.1 — Calibração", curto:"Calibração", antes:`<p class="small ink2">Confira a calibração impressa no ECG.</p>`,
       titulo:"O ECG está em 25 mm/s e 10 mm/mV?", opcoes:[["padrao","Sim — 25 mm/s e 10 mm/mV","25 mm/s · 10 mm/mV"],["outra","Outra / não sei"]],
-      depois:ajudaRev("ondecal", "Onde encontro isso?", pendente("Foto padrão de um ECG mostrando onde ficam a velocidade e a amplitude impressas"))});
+      depois:ajudaRev("ondecal", "Onde encontro isso?", ref("calibracao", "Foto padrão de um ECG mostrando onde ficam a velocidade e a amplitude impressas"), ["calibracao"])});
     if (r.cal === "padrao") B.res("ok", "Calibração padrão", "");
     if (r.cal === "outra"){
       B.res("warn", "Atenção à calibração", "Este ECG não foi confirmado em 25 mm/s e 10 mm/mV. Isso modifica a relação entre os quadrados do papel e o tempo. Sugiro repetir o ECG.");
@@ -1280,7 +1300,7 @@ const ETAPAS = {
       if (r.elet === "nao"){
         B.res("warn", "Antes de interpretar, considere possível troca de eletrodos", "Quando onda P e QRS estão negativos em DI e positivos em aVR, suspeite especialmente de inversão dos eletrodos dos braços. Entretanto, alterações isoladas da polaridade do QRS podem representar o próprio padrão do paciente.");
         B.escolha("eletSeguir", {curto:"Possível troca de eletrodos", opcoes:[["sim","Seguir mesmo assim"]],
-          antes:ajuda("eletajuda", "Me ajude a conferir os eletrodos") + (S.aberto.eletajuda ? `<div class="helpbox"><p>Confira a posição dos eletrodos dos membros e, se houver suspeita de inversão, corrija a posição e repita o ECG antes de interpretar, sempre que possível.</p>${pendente("Imagem com a colocação correta dos eletrodos dos membros")}</div>` : "")});
+          antes:ajuda("eletajuda", "Me ajude a conferir os eletrodos") + (S.aberto.eletajuda ? `<div class="helpbox"><p>Confira a posição dos eletrodos dos membros e, se houver suspeita de inversão, corrija a posição e repita o ECG antes de interpretar, sempre que possível.</p>${ref("eletrodos", "Imagem com a colocação correta dos eletrodos dos membros")}</div>` : "")});
       }
     }
     return {blocos:B.L, ok:() => !!(R().cal && (calibPadrao() || R().calSeguir) && (R().elet === "sim" || (R().elet === "nao" && R().eletSeguir)))};
@@ -1294,11 +1314,11 @@ const ETAPAS = {
     if (r.ritmo === "nao") B.res("warn", "O ritmo não apresenta todos os critérios de ritmo sinusal", "Continue a sequência. Na etapa Descarte de arritmias, vamos caracterizá-lo melhor.");
     if (r.ritmo === "duvida"){
       const NAO_CONFERE = ["warn", "Os critérios de ritmo sinusal não estão todos presentes", "Não precisamos definir a arritmia agora. Continue a sequência: vamos caracterizar melhor o ritmo em Descarte de arritmias."];
-      B.escolha("wiz1", {curto:"Onda P", antes:`<span class="eyebrow">Como identificar o ritmo sinusal</span><h3>1. Primeiro, encontre a onda P</h3><p class="small ink2">DII costuma ser uma boa derivação para começar.</p>${pendente("Imagem de um ECG sinusal destacando apenas a P em DII")}`,
+      B.escolha("wiz1", {curto:"Onda P", antes:`<span class="eyebrow">Como identificar o ritmo sinusal</span><h3>1. Primeiro, encontre a onda P</h3><p class="small ink2">DII costuma ser uma boa derivação para começar.</p>${ref("p-dii", "Imagem de um ECG sinusal destacando apenas a P em DII")}`,
         opcoes:[["sim","Encontrei a onda P","Encontrada"],["nao","Não encontrei","Não encontrada"]]});
       if (r.wiz1 === "nao") B.res("warn", "Sem uma onda P claramente identificável, o ritmo não é sinusal", "Continue a sequência. Vamos caracterizar melhor o ritmo em Descarte de arritmias.");
       if (r.wiz1 === "sim"){
-        B.escolha("wiz2", {curto:"Polaridade da P", antes:`<h3>2. Agora confira a polaridade da P</h3><p class="small ink2">Para uma onda P de origem sinusal, procure: positiva em DI, positiva em DII, positiva em aVF, negativa em aVR. Observe apenas se a onda P está predominantemente acima ou abaixo da linha de base.</p>${pendente("Imagem pequena com DI, DII, aVF e aVR mostrando a polaridade esperada da P")}`,
+        B.escolha("wiz2", {curto:"Polaridade da P", antes:`<h3>2. Agora confira a polaridade da P</h3><p class="small ink2">Para uma onda P de origem sinusal, procure: positiva em DI, positiva em DII, positiva em aVF, negativa em aVR. Observe apenas se a onda P está predominantemente acima ou abaixo da linha de base.</p>${ref("p-polaridade", "Imagem pequena com DI, DII, aVF e aVR mostrando a polaridade esperada da P")}`,
           opcoes:[["sim","Tem característica sinusal","Sinusal"],["nao","Não tem característica sinusal","Não sinusal"]]});
         if (r.wiz2 === "nao") B.res(...NAO_CONFERE);
         if (r.wiz2 === "sim"){
@@ -1358,7 +1378,7 @@ const ETAPAS = {
       antes:`<div class="sec"><h3>Antes de procurar alterações, pense em territórios</h3></div><p class="small ink2">Não analise uma derivação isoladamente. Procure alterações em derivações anatomicamente contíguas.</p>${terrHTML()}`,
       titulo:"Você identifica alguma destas alterações em pelo menos duas derivações contíguas?",
       opcoes:[["supra","Supradesnivelamento do segmento ST","Supra de ST"],["infra","Infradesnivelamento do segmento ST","Infra de ST"],["tinv","Inversão simétrica da onda T","T invertida simétrica"],["nenhuma","Nenhuma dessas alterações","Nenhuma"]],
-      depois:ajudaRev("critsupra", "Me ajude a revisar os critérios de supra", pendente("Critérios de supra de ST por derivação, sexo e idade"))});
+      depois:ajudaRev("critsupra", "Me ajude a revisar os critérios de supra", ref("supra", "Critérios de supra de ST por derivação, sexo e idade"), ["supra"])});
     if (m.includes("supra")){
       B.escolha("supraDist", {curto:"Distribuição do supra", titulo:"O supradesnivelamento de ST apresenta distribuição em derivações anatomicamente contíguas compatível com um território coronariano?",
         opcoes:[["sim","Sim","Territorial"],["difuso","Não — o supra parece difuso","Difuso"],["naosei","Não sei"]], pendentes:["naosei"],
@@ -1376,7 +1396,7 @@ const ETAPAS = {
     if (m.includes("nenhuma")){
       B.multi("padroes", {sec:"Antes de seguir, procure padrões de alto risco", curto:"Padrões de alto risco", antes:`<p class="small ink2">Faça uma última checagem:</p>`,
         opcoes:PADROES.map(([k, l]) => [k, l]).concat([["nenhum","Nenhum desses padrões","Nenhum"]]),
-        depois:ajudaRev("padraoajuda", "Não sei identificar", PADROES.map(([, l]) => pendente(l + ": imagem validada e 2 ou 3 características")).join(""))});
+        depois:ajudaRev("padraoajuda", "Não sei identificar", PADROES.map(([k, l]) => refVisivel(k) ? `<h4>${l}</h4>` + refHTML(k) : pendente(l + ": imagem validada e 2 ou 3 características")).join(""), PADROES.map(([k]) => k))});
       const p = r.padroes || [];
       if (p.includes("nenhum")) B.res("ok", "Nenhum padrão isquêmico evidente identificado nesta etapa", "");
       else if (p.length) B.res("bad", "Padrão de alto risco marcado", p.map(x => PADROES.find(y => y[0] === x)[1]).join(" · "));
@@ -1391,13 +1411,13 @@ const ETAPAS = {
       B.res("info", `QRS ${r.qrs} — já registrado na etapa de arritmias`, "O Copiloto usa a informação já armazenada e não pergunta de novo." + (r.qrsMs ? ` Medido na foto: ${r.qrsMs} ms.` : ""));
     } else {
       B.escolha("qrs8", {sec:"8.1 — Duração do QRS", curto:"Duração do QRS", titulo:"O QRS é estreito ou largo?", opcoes:LARG,
-        depois:ajuda("medirqrs8", "Não sei medir o QRS") + (S.aberto.medirqrs8 ? `<div class="helpbox"><p>Meça do início da primeira deflexão do QRS até o final da última deflexão.</p><p>Em velocidade de 25 mm/s, cada quadradinho corresponde a 40 ms. Portanto, <b>3 quadradinhos = 120 ms</b>.</p>${S.cur.tela ? `<button class="btn small" type="button" data-medir="qrs" data-chave="qrs8">${I.regua}Medir o QRS na foto</button>` : ""}${pendente("Imagem mostrando início e final do QRS")}</div>` : "")});
+        depois:ajuda("medirqrs8", "Não sei medir o QRS") + (S.aberto.medirqrs8 ? `<div class="helpbox"><p>Meça do início da primeira deflexão do QRS até o final da última deflexão.</p><p>Em velocidade de 25 mm/s, cada quadradinho corresponde a 40 ms. Portanto, <b>3 quadradinhos = 120 ms</b>.</p>${S.cur.tela ? `<button class="btn small" type="button" data-medir="qrs" data-chave="qrs8">${I.regua}Medir o QRS na foto</button>` : ""}${ref("qrs-inicio-fim", "Imagem mostrando início e final do QRS")}</div>` : "")});
       if (r.qrs8) B.res(r.qrs8 === "largo" ? "warn" : "ok", `QRS ${r.qrs8}`, r.qrsMs ? `${r.qrsMs} ms medidos na foto.` : "");
     }
     if (largura === "largo"){
       B.escolha("v1", {sec:"8.2 — Avalie bloqueio de ramo", curto:"Padrão em V1", titulo:"Observe V1. Qual padrão predomina?",
         opcoes:[["brd","rSR' / R' terminal positivo","R' terminal positivo"],["bre","QRS predominantemente negativo","QRS negativo"],["duvida","Não tenho certeza","Sem certeza"]], pendentes:["duvida"],
-        depois:r.v1 === "duvida" ? `<div class="helpbox"><p>Compare V1: no <b>BRD</b> o QRS termina positivo (rSR' ou R' terminal); no <b>BRE</b> o QRS em V1 é predominantemente negativo.</p>${pendente("Imagem comparativa de V1 no BRD × V1 no BRE")}<p class="tiny mute">Se a dúvida continuar, o Copiloto registra "QRS largo, sem padrão típico de bloqueio de ramo definido" e segue.</p></div>
+        depois:r.v1 === "duvida" ? `<div class="helpbox"><p>Compare V1: no <b>BRD</b> o QRS termina positivo (rSR' ou R' terminal); no <b>BRE</b> o QRS em V1 é predominantemente negativo.</p>${ref("v1-brd-bre", "Imagem comparativa de V1 no BRD × V1 no BRE")}<p class="tiny mute">Se a dúvida continuar, o Copiloto registra "QRS largo, sem padrão típico de bloqueio de ramo definido" e segue.</p></div>
           <button class="btn small conf" type="button" data-conf="v1">Seguir sem padrão definido ${I.seta}</button>` : ""});
       if (r.v1 === "brd") B.res("warn", "Padrão compatível com BRD", "");
       if (r.v1 === "bre") B.res("warn", "Padrão compatível com BRE", "");
@@ -1463,8 +1483,8 @@ const ETAPAS = {
   10: () => {
     const r = R(), m = r.esp || [], q = qt(), B = Blocos();
     const TRI = [["sim","Sim"],["nao","Não"],["naosei","Não sei identificar"]];
-    const foto = (k, legenda) => r[k] !== "naosei" ? "" : revisao()
-      ? `<div class="helpbox">${pendente(legenda)}<p class="tiny mute">Depois de comparar, responda sim ou não.</p></div>`
+    const foto = (k, legenda) => r[k] !== "naosei" ? "" : revisao() || refVisivel(k)
+      ? `<div class="helpbox">${ref(k, legenda)}<p class="tiny mute">Depois de comparar, responda sim ou não.</p></div>`
       : `<div class="helpbox"><p>A imagem de referência desta alteração está em preparação. Compare com o seu material do curso e responda sim ou não.</p></div>`;
     B.multi("esp", {curto:"Suspeita clínica", antes:`<p class="small mute">Antes de terminar:</p>`, titulo:"Existe suspeita clínica de alguma destas condições?",
       opcoes:ESPECIAIS.map(([k, l]) => [k, l]).concat([["nenhuma","Nenhuma dessas","Nenhuma"]])});
@@ -1858,6 +1878,7 @@ function ligar(raiz){
   raiz.querySelectorAll("[data-instalar]").forEach(b => b.onclick = () => { const e = S.instalar; if (!e) return; S.instalar = null; try { e.prompt(); } catch(_){} });
   // atalho do início: abre o Guia já nas calculadoras, com a calculadora pedida no topo (quem rola é o desenhar)
   raiz.querySelectorAll("[data-atalho]").forEach(b => b.onclick = () => { S.guiaAba = "calc"; S.guiaFoco = b.dataset.atalho; irAba("guia"); });
+  raiz.querySelectorAll("[data-ampliar]").forEach(b => b.onclick = () => ampliar(b.dataset.ampliar));
   raiz.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const k = b.dataset.toggle; S.aberto[k] = !S.aberto[k]; manterRolagem(desenhar); });
   raiz.querySelectorAll("[data-quad]").forEach(b => b.onclick = () => { S.cur.calQuadrados = +b.dataset.quad; desenhar(); });
   // abrir/recolher muda a altura da área de rolagem: a casca é remontada, mas a leitura fica onde estava

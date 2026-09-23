@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Imagens do Copiloto</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--papel:#EEEFF1;--sup:#FFFFFF;--tinta:#13161B;--tinta2:#4A505A;--acento:#A62B26;--linha:#DBDDE1;--ok:#1F7A4D;--sans:"Instrument Sans",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--papel:#111317;--sup:#1A1D23;--tinta:#ECEDEF;--tinta2:#A4A9B2;--acento:#E0645E;--linha:#2A2E36;--ok:#4CC38A;color-scheme:dark}}
+:root[data-theme="dark"]{--papel:#111317;--sup:#1A1D23;--tinta:#ECEDEF;--tinta2:#A4A9B2;--acento:#E0645E;--linha:#2A2E36;--ok:#4CC38A;color-scheme:dark}
+*{box-sizing:border-box;margin:0}
+body{background:var(--papel);color:var(--tinta);font-family:var(--sans);line-height:1.5;padding:32px 16px 120px}
+main{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.rot{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--acento)}
+h1{font-size:1.7rem;font-weight:600;line-height:1.2}
+.intro{color:var(--tinta2)}
+.item{background:var(--sup);border:1px solid var(--linha);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.item h2{font-size:1.05rem;font-weight:600}
+.onde{font-family:var(--mono);font-size:.72rem;color:var(--tinta2)}
+.item img{width:100%;height:auto;border-radius:8px;background:#fff;display:block;cursor:zoom-in}
+.leg{font-size:.95rem}
+.car{padding-left:20px;display:flex;flex-direction:column;gap:3px;font-size:.93rem}
+.crit p{border-left:2px solid var(--linha);padding-left:10px;margin:4px 0}
+.cred{font-family:var(--mono);font-size:.7rem;color:var(--tinta2)}
+.cred a{color:inherit}
+.acoes{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;font-size:.92rem;border-radius:999px;border:1px solid var(--linha);background:transparent;color:var(--tinta);padding:10px 16px;min-height:44px;cursor:pointer}
+button[aria-pressed="true"].sim{background:var(--ok);border-color:var(--ok);color:#fff}
+button[aria-pressed="true"].nao{background:var(--acento);border-color:var(--acento);color:#fff}
+textarea{font:inherit;font-size:.92rem;width:100%;min-height:64px;border:1px solid var(--linha);border-radius:10px;padding:10px;background:var(--papel);color:var(--tinta)}
+textarea[hidden]{display:none}
+.barra{position:fixed;left:0;right:0;bottom:0;background:var(--sup);border-top:1px solid var(--linha);padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap}
+.barra .cont{font-family:var(--mono);font-size:.78rem;color:var(--tinta2)}
+.barra button{background:var(--tinta);color:var(--papel);border-color:var(--tinta)}
+.zoom{position:fixed;inset:0;background:rgba(0,0,0,.92);overflow:auto;z-index:9;display:flex;align-items:center}
+.zoom img{max-width:none;background:#fff;cursor:zoom-out}
+</style>
+</head>
+<body>
+<main>
+  <span class="rot">Copiloto de ECG · validação</span>
+  <h1>Imagens e textos de referência</h1>
+  <p class="intro">Dr. Vitor, estas são as imagens e os textos que entram nos pontos onde você pediu imagem. Nenhum aparece para o aluno antes da sua aprovação. Em cada um, marque <b>Aprovo</b> ou <b>Trocar</b> (e diga o que mudar). No fim, toque em <b>Copiar resposta</b> e cole no grupo.</p>
+  <div id="lista"></div>
+</main>
+<div class="barra"><span class="cont" id="cont"></span><button type="button" id="copiar">Copiar resposta</button></div>
+<script src="referencias.js"></script>
+<script>
+const ONDE = {calibracao:"Etapa 2 · Onde encontro a calibração?", eletrodos:"Etapa 2 · Me ajude a conferir os eletrodos",
+  "p-dii":"Etapa 3 · Como identificar o ritmo sinusal, passo 1", "p-polaridade":"Etapa 3 · Como identificar o ritmo sinusal, passo 2",
+  supra:"Etapa 7 · Me ajude a revisar os critérios de supra", wellens:"Etapa 7 · Padrões de alto risco · Não sei identificar",
+  dewinter:"Etapa 7 · Padrões de alto risco · Não sei identificar", aslanger:"Etapa 7 · Padrões de alto risco · Não sei identificar",
+  avr:"Etapa 7 · Padrões de alto risco · Não sei identificar", hiper:"Etapa 7 · Padrões de alto risco · Não sei identificar",
+  "qrs-inicio-fim":"Etapas 6 e 8 · Não sei medir o QRS", "v1-brd-bre":"Etapa 8 · Bloqueio de ramo · Não tenho certeza",
+  s1q3t3:"Etapa 10 · TEP · Não sei identificar", hk1:"Etapa 10 · Hipercalemia · Não sei identificar", hk2:"Etapa 10 · Hipercalemia · Não sei identificar",
+  hpk1:"Etapa 10 · Hipocalemia · Não sei identificar", hpk2:"Etapa 10 · Hipocalemia · Não sei identificar"};
+const NOME = {calibracao:"Calibração impressa", eletrodos:"Eletrodos dos membros", "p-dii":"Onda P em DII", "p-polaridade":"Polaridade da P",
+  supra:"Critérios de supra de ST", wellens:"Padrão de Wellens", dewinter:"Padrão de de Winter", aslanger:"Padrão de Aslanger",
+  avr:"Infra difuso de ST + supra em aVR", hiper:"Ondas T hiperagudas", "qrs-inicio-fim":"Início e fim do QRS", "v1-brd-bre":"V1 no BRD × V1 no BRE",
+  s1q3t3:"Padrão S1Q3T3", hk1:"T apiculada (hipercalemia)", hk2:"Padrão sinusoidal (hipercalemia)", hpk1:"T achatada (hipocalemia)", hpk2:"Onda U (hipocalemia)"};
+const CHAVE = "copiloto.revisao-imagens";
+let R = {}; try { R = JSON.parse(localStorage.getItem(CHAVE)) || {}; } catch(_){}
+const salvar = () => { try { localStorage.setItem(CHAVE, JSON.stringify(R)); } catch(_){} };
+const ids = Object.keys(REFS).filter(id => REFS[id].tipo === "texto" || REFS[id].arquivo);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function desenhar(){
+  document.getElementById("lista").innerHTML = ids.map((id, i) => {
+    const f = REFS[id], r = R[id] || {};
+    const corpo = f.tipo === "texto" ? `<div class="crit">${f.html}</div>`
+      : `<img src="${f.arquivo}" alt="${esc(f.alt)}" width="${f.largura}" height="${f.altura}" loading="lazy" data-zoom>
+         <p class="leg">${f.legenda}</p>${f.caracteristicas ? `<ul class="car">${f.caracteristicas.map(c => `<li>${c}</li>`).join("")}</ul>` : ""}`;
+    const fonte = f.pagina ? ` · <a href="${f.pagina}" target="_blank" rel="noopener">página de origem</a>` : "";
+    return `<section class="item">
+      <span class="onde">${i + 1} · ${ONDE[id] || ""}</span><h2>${NOME[id] || id}</h2>${corpo}
+      <p class="cred">${f.credito}${fonte}</p>
+      <div class="acoes"><button type="button" class="sim" data-id="${id}" data-v="ok" aria-pressed="${r.v === "ok"}">Aprovo</button>
+        <button type="button" class="nao" data-id="${id}" data-v="trocar" aria-pressed="${r.v === "trocar"}">Trocar</button></div>
+      <textarea data-nota="${id}" placeholder="O que mudar?" ${r.v === "trocar" ? "" : "hidden"}>${esc(r.nota || "")}</textarea></section>`;
+  }).join("");
+  const feitos = ids.filter(id => R[id] && R[id].v).length;
+  document.getElementById("cont").textContent = `${feitos} de ${ids.length} revisadas`;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-v]");
+  if (b){ const id = b.dataset.id; R[id] = Object.assign(R[id] || {}, {v: R[id] && R[id].v === b.dataset.v ? "" : b.dataset.v}); salvar(); desenhar(); return; }
+  const z = e.target.closest("[data-zoom]");
+  if (z){ const o = document.createElement("div"); o.className = "zoom"; o.innerHTML = `<img src="${z.getAttribute("src")}" alt="">`; o.onclick = () => o.remove(); document.body.appendChild(o); return; }
+});
+document.addEventListener("input", e => { const id = e.target.dataset.nota; if (!id) return; R[id] = Object.assign(R[id] || {}, {nota:e.target.value}); salvar(); });
+document.getElementById("copiar").onclick = async () => {
+  const linhas = ids.map((id, i) => { const r = R[id] || {}; return `${i + 1}. ${NOME[id] || id}: ${r.v === "ok" ? "aprovo" : r.v === "trocar" ? "trocar" + (r.nota ? " — " + r.nota : "") : "sem resposta"}`; });
+  const txt = "Imagens do Copiloto\n" + linhas.join("\n");
+  const b = document.getElementById("copiar");
+  try { await navigator.clipboard.writeText(txt); b.textContent = "Copiado"; } catch(_){ prompt("Copie o texto:", txt); }
+  setTimeout(() => b.textContent = "Copiar resposta", 1800);
+};
+desenhar();
+</script>
+</body>
+</html>

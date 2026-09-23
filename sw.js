@@ -1,12 +1,14 @@
 /* Copiloto de ECG — service worker.
    Rede primeiro, com limite de 3 s; o cache é a reserva para plantão sem sinal.
    Assim, com internet, a versão nova aparece na hora. */
-const VERSAO = "copiloto-v7";
-const CASCA = ["./", "index.html", "style.css", "controles.css", "app.js", "controles.js", "plataforma.js",
+const VERSAO = "copiloto-v8";
+const CASCA = ["./", "index.html", "style.css", "controles.css", "app.js", "controles.js", "referencias.js", "plataforma.js",
   "config.js", "conta-falsa.js", "conta.js", "sync.js", "vendor/supabase.js", "fontes/fontes.css",
   "fontes/Geist-300.woff2", "fontes/Geist-400.woff2", "fontes/Geist-500.woff2", "fontes/Geist-600.woff2",
   "fontes/GeistMono-400.woff2", "fontes/GeistMono-500.woff2", "manifest.webmanifest",
-  "icones/icon-192.png", "icones/icon-512.png", "icones/apple-touch-icon.png"];
+  "icones/icon-192.png", "icones/icon-512.png", "icones/apple-touch-icon.png",
+  // imagens de referência: o plantão sem sinal também precisa delas
+  "ref/aslanger.webp", "ref/avr.webp", "ref/calibracao.webp", "ref/dewinter.webp", "ref/eletrodos.webp", "ref/hiper.webp", "ref/hk1.webp", "ref/hk2.webp", "ref/hpk1.webp", "ref/hpk2.webp", "ref/p-dii.webp", "ref/p-polaridade.webp", "ref/qrs-inicio-fim.webp", "ref/s1q3t3.webp", "ref/v1-brd-bre.webp", "ref/wellens.webp"];
 
 self.addEventListener("install", e => {
   // allSettled: um arquivo faltando não pode impedir a instalação
