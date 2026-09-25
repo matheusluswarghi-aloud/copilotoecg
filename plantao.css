@@ -1,0 +1,183 @@
+/* Copiloto de ECG — Modo plantão e o Copiloto IA acompanhando nas etapas (25/09/2026)
+   Spec: docs/plans/2026-09-25-modo-plantao/design.md. Vem do protótipo aprovado (prototipo/modo-plantao.html),
+   do bloco "Início" ao "etapas 1–10". Tokens de style.css; o "Agora" usa o .ia-agora de ia.css. */
+
+/* ---------- Início: cartão do modo plantão ---------- */
+.pl-card{gap:12px}
+.pl-card>*{position:relative}   /* o brilho do .card::before pinta por cima do texto no tema claro */
+.pl-cab{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pl-cab .eyebrow{color:var(--ink-2)}
+.pl-card h2{font-size:1.2rem}
+.pl-qs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pl-q{appearance:none;min-height:48px;border-radius:14px;padding:8px 12px;text-align:left;cursor:pointer;color:var(--ink);font-size:.9rem;font-weight:500;line-height:1.2;letter-spacing:-.01em;
+  display:flex;flex-direction:column;justify-content:center;gap:2px;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi);transition:transform .18s var(--spring),background .2s}
+.pl-q small{font-size:.68rem;font-weight:400;color:var(--mute);letter-spacing:0}
+.pl-q:active{transform:scale(.97);background:var(--glass-3)}
+
+/* ---------- tela do modo plantão ---------- */
+.pl .scroll{gap:10px;padding-bottom:28px}
+.pl .top .t strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-mais{appearance:none;flex:none;min-height:44px;padding:0 12px;border-radius:var(--r-pill);border:1px solid var(--edge);background:var(--glass);color:var(--ink-2);font-size:.8rem;cursor:pointer;white-space:nowrap}
+.pl-item{border-radius:16px;padding:12px 12px 12px 14px;display:flex;flex-direction:column;gap:8px;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi);animation:rise .3s var(--ease) both}
+.pl-item h3{font-size:.98rem;line-height:1.25;font-weight:500}
+.pl-crit{font-size:.8rem;line-height:1.4;color:var(--ink-2);margin-top:-3px}
+.pl-item.naosei{border-left:2px dashed var(--edge-2)}
+.pl-item.futura{opacity:.55;animation:none}
+/* opções: as do app, em grade de 2 ou 3 colunas, 44 px */
+.pl-seg{display:grid;grid-template-columns:repeat(var(--c,3),1fr);gap:6px}
+.pl-seg button{appearance:none;min-height:44px;border-radius:12px;padding:6px 8px;font-size:.86rem;font-weight:500;line-height:1.2;color:var(--ink-2);cursor:pointer;
+  background:rgba(255,255,255,.04);border:1px solid var(--edge);transition:background .2s,color .2s,transform .18s var(--spring)}
+.pl-seg button small{display:block;font-family:var(--mono);font-size:.58rem;font-weight:400;letter-spacing:0;color:var(--mute);margin-top:2px}
+:root[data-theme="light"] .pl-seg button{background:rgba(255,255,255,.6)}
+.pl-seg button:active{transform:scale(.95)}
+.pl-seg button[aria-pressed="true"]{color:var(--ink);background:var(--glass-3);border-color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--ink-2)}
+.pl-seg button[aria-pressed="true"] small{color:var(--ink-2)}
+.pl-seg button[data-tipo="nao"][aria-pressed="true"]{background:rgba(76,201,182,.16);color:var(--teal);border-color:rgba(76,201,182,.45)}
+.pl-seg button[data-tipo="ns"]{color:var(--mute)}
+/* pergunta dentro do item (V1, Sgarbossa, V1–V3, o que a etapa 6 pergunta a seguir) */
+.pl-sub{display:flex;flex-direction:column;gap:8px;padding-top:9px;border-top:1px solid var(--edge)}
+.pl-sub .q{font-size:.9rem;font-weight:500;line-height:1.3}
+.pl-sub .d{font-size:.78rem;color:var(--ink-2);margin-top:-4px;line-height:1.4}
+.pl-num{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.pl-num label{display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--ink-2)}
+.pl-num input{min-height:44px;border-radius:12px;border:1px solid var(--edge);background:rgba(255,255,255,.04);color:var(--ink);font:inherit;font-size:1rem;padding:0 12px}
+:root[data-theme="light"] .pl-num input{background:rgba(255,255,255,.7)}
+.pl-mini{display:flex;justify-content:space-between;gap:10px;font-size:.8rem;color:var(--mute);padding:2px 0}
+.pl-mini b{font-weight:500;color:var(--ink-2);text-align:right}
+/* respondido: recolhe numa linha, como a pergunta feita das etapas. Um toque reabre, sem apagar */
+.pl-feito{appearance:none;display:grid;grid-template-columns:20px 1fr auto;align-items:center;gap:9px;width:100%;min-height:46px;text-align:left;cursor:pointer;
+  border:1px solid var(--edge);border-radius:14px;padding:10px 13px;font-size:.84rem;color:var(--mute);background:var(--glass);animation:rise .25s var(--ease) both}
+.pl-feito .ck{width:18px;height:18px;border-radius:50%;background:rgba(76,201,182,.18);color:var(--teal);display:inline-flex;align-items:center;justify-content:center}
+.pl-feito .ck svg{width:11px;height:11px;stroke-width:2.6}
+.pl-feito>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-feito b{font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:62vw}
+.pl-feito b.nao{color:var(--teal)}
+/* resultado da etapa (o B.res do app), em linha: a cor fica no ponto, o magenta cheio é só da conduta */
+.pl-res{display:grid;grid-template-columns:8px 1fr;gap:10px;align-items:start;padding:10px 13px;border-radius:14px;background:var(--glass);border:1px solid var(--edge);animation:rise .25s var(--ease) both}
+.pl-res>i{width:8px;height:8px;border-radius:50%;margin-top:6px;background:var(--blue)}
+.pl-res.bad{border-left:2px solid var(--mag)}
+.pl-res.bad>i{background:var(--mag);box-shadow:0 0 8px var(--mag)}.pl-res.warn>i{background:var(--violet)}.pl-res.ok>i{background:var(--teal)}
+.pl-res strong{font-weight:500;font-size:.88rem;line-height:1.3;display:block}
+.pl-res p{font-size:.82rem;line-height:1.4;color:var(--ink-2);margin-top:2px}
+.pl-res .de{display:block;font-family:var(--mono);font-size:.6rem;letter-spacing:.04em;color:var(--mute);margin-top:4px}
+/* conduta imediata: o "Agora" da IA (.ia-agora), com o texto inteiro do documento */
+.pl-agora{gap:6px;animation:rise .3s var(--ease) both}
+.pl-agora p{font-size:.9rem;line-height:1.45;color:rgba(255,255,255,.9)}
+.pl-agora p.fora{color:rgba(255,255,255,.62)}
+.pl-agora p.on{color:#fff;font-weight:600;font-size:.98rem}
+.pl-de{font-family:var(--mono);font-size:.62rem;letter-spacing:.04em;color:rgba(255,255,255,.66);margin-top:2px}
+.pl-agora .pl-seg{--c:2}
+.pl-agora .pl-seg button{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22);color:#fff}
+.pl-agora .pl-seg button[aria-pressed="true"]{background:rgba(255,255,255,.92);color:#2a0d20}
+.pl-agora .q{font-size:.8rem;color:rgba(255,255,255,.8);margin-top:2px}
+.pl-agora .semdoc{margin-top:4px;padding:8px 10px;border-radius:10px;border:1px dashed rgba(255,255,255,.35);font-size:.8rem;line-height:1.4;color:rgba(255,255,255,.85)}
+/* tutora (ia-regras.js) e travas: violeta; próximo passo sem urgência: vidro com fio violeta */
+.pl-atencao,.pl-passo,.pl-fim{border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;animation:rise .3s var(--ease) both;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi)}
+.pl-atencao{border-left:2px solid var(--violet)}
+.pl-atencao.info{border-left:1px solid var(--edge)}
+.pl-passo{border-left:2px solid var(--edge-2)}
+.pl-atencao .ix,.pl-passo .ix,.pl-fim .ix{font-family:var(--mono);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--violet)}
+.pl-atencao.info .ix,.pl-passo .ix{color:var(--mute)}
+.pl-atencao strong,.pl-passo strong,.pl-fim strong{font-weight:500;font-size:.95rem;line-height:1.3}
+.pl-atencao p,.pl-passo p,.pl-fim p{font-size:.88rem;line-height:1.45;color:var(--ink-2)}
+.pl-atencao .de,.pl-passo .de,.pl-fim .de,.pl-ajuda .de{font-family:var(--mono);font-size:.6rem;letter-spacing:.04em;color:var(--mute)}
+.pl-fim.falta{border:1px dashed var(--violet);background:rgba(164,124,255,.08)}
+.pl-fim.fecha .ix{color:var(--teal)}
+/* ajuda do "não sei": texto do documento/aula + a imagem de referência (offline). Não some ao responder */
+.pl-ajuda{border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:.84rem;line-height:1.45;color:var(--ink-2);background:var(--glass);border:1px solid var(--edge)}
+.pl-ajuda p b{color:var(--ink);font-weight:500}
+.pl-ajuda h4{font-size:.86rem;font-weight:500;color:var(--ink);margin-top:4px}
+.pl-ajuda .fecha{align-self:flex-start;color:var(--mute)}
+.pl-ajuda .pend{font-size:.76rem;color:var(--mute);border:1px dashed var(--edge-2);border-radius:10px;padding:7px 9px}
+.pl-link{appearance:none;background:none;border:0;padding:6px 0;min-height:36px;color:var(--ink-2);font-size:.8rem;cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--edge-2)}
+/* somar queixa */
+.pl-somar{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:16px;border:1px dashed var(--edge-2)}
+.pl-somar .pl-qs .pl-q{min-height:44px}
+.pl-nota{font-size:.76rem;color:var(--mute);text-align:center;padding:2px 8px}
+.pl-foot .btn{flex:1;min-width:0;padding-inline:12px;white-space:nowrap}
+/* 320 px: "Copiloto IA" vira "IA" para "Leitura completa" caber numa linha */
+@media (max-width:352px){.pl-foot .btn.pl-ia{flex:none;padding-inline:16px}.pl-foot .btn.pl-ia .l{display:none}.pl-seg button{font-size:.8rem;padding:6px 4px}}
+/* teal claro some no fundo claro: "não tem" escurece no tema claro */
+:root[data-theme="light"] .pl-seg button[data-tipo="nao"][aria-pressed="true"],:root[data-theme="light"] .pl-feito b.nao,:root[data-theme="light"] .pl-fim.fecha .ix{color:#17756A}
+.pl-foot .btn svg{flex:none}
+
+/* ---------- etapas 1–10: o Copiloto acompanhando (faixa no rodapé) — igual à v1 ---------- */
+.foot .linha1{order:-2;flex-basis:100%;display:flex;gap:8px;align-items:stretch;min-width:0}
+.acomp{appearance:none;flex:1;min-width:0;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;min-height:48px;padding:5px 10px 5px 12px;
+  border-radius:16px;text-align:left;cursor:pointer;color:var(--ink);
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi);transition:transform .18s var(--spring),background .2s}
+.acomp:active{transform:scale(.985)}
+.acomp .ic{position:relative;display:inline-flex;color:var(--mute)}
+.acomp .ic svg{width:18px;height:18px}
+.acomp .ic i{position:absolute;right:-2px;top:-2px;width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 6px var(--teal)}
+.acomp .t{min-width:0;display:flex;flex-direction:column;gap:1px}
+.acomp .t small{font-family:var(--mono);font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acomp .t span{font-size:.84rem;line-height:1.3;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acomp>svg{width:15px;height:15px;color:var(--mute);transition:transform .25s var(--spring)}
+.acomp.ponto{border-left:2px solid var(--violet)}
+.acomp.ponto .ic{color:var(--violet)}
+.acomp.ponto .ic i{background:var(--violet);box-shadow:0 0 6px var(--violet)}
+.acomp.ponto .t small{color:var(--violet)}
+.acomp.ponto .t span{color:var(--ink);white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.acomp.ponto>svg{transform:rotate(90deg)}
+.acomp.ponto[aria-expanded="true"]>svg{transform:rotate(-90deg)}
+.acomp.nova{animation:rise .35s var(--ease) both,chama 1.2s .4s var(--ease) 1}
+.acomp.off .ic i{background:var(--mute-2);box-shadow:none}
+.acomp-corpo{order:-2;flex-basis:100%;display:flex;flex-direction:column;gap:6px;margin-top:-2px;padding:10px 12px 4px 14px;border-radius:16px;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);border-left:2px solid var(--violet);animation:rise .25s var(--ease) both}
+.acomp-corpo .txt{max-height:min(18vh,6.2em);overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:6px;
+  -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 14px),transparent)}
+.acomp-corpo p{font-size:.86rem;line-height:1.45;color:var(--ink-2)}
+.acomp-corpo .de{font-family:var(--mono);font-size:.62rem;letter-spacing:.04em;color:var(--mute)}
+.acomp-corpo .acoes{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.acomp-corpo .acoes .textbtn{color:var(--ink)}
+.acomp-corpo .acoes .textbtn.fora{color:var(--mute)}
+.linha1 .continua{order:0;flex:none;flex-basis:auto;min-height:48px;width:48px}
+.linha1 .continua>span{padding:0;width:44px;height:44px;justify-content:center;border-radius:50%}
+.linha1 .continua .p{display:none}
+@media (min-width:400px){.linha1 .continua{width:auto}.linha1 .continua>span{width:auto;padding:7px 14px 7px 11px;border-radius:var(--r-pill)}.linha1 .continua .p{display:inline}}
+@media (max-width:352px){.acomp .ic{display:none}.acomp{grid-template-columns:1fr auto;padding-left:12px}}
+/* na leitura completa, a resposta que veio do plantão aparece feita, com a etiqueta */
+.qb.feita .tag.pl{font-size:.56rem;padding:2px 6px;margin-left:6px;vertical-align:1px}
+.ia-sug.da-etapa{flex-direction:row;align-items:center;border-left:2px solid var(--edge-2)}
+.ia-sug.da-etapa span small{display:block;font-family:var(--mono);font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-bottom:3px}
+
+/* ---------- ajustes da montagem ---------- */
+.pl-sub-h{margin-top:-4px}
+.pl-eixo{font-size:.86rem}
+.pl-somar-fim{align-self:center;min-height:44px}
+.pl-trava{border-left:2px solid var(--violet)}
+/* etapa 4 vinda do plantão: a faixa marcada lá, antes de pedir o número */
+.pl-faixa{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pl-faixa .tag.pl,.qb.feita .tag.pl{font-size:.56rem;padding:2px 6px}
+.pl-sint{padding:0 4px}
+.pl-foot{align-items:stretch}
+.pl-foot .btn{min-height:50px}
+.pl-mais,.pl-link{min-height:44px}
+@media (prefers-reduced-motion: reduce){
+  .pl-item,.pl-feito,.pl-res,.pl-agora,.pl-atencao,.pl-passo,.pl-fim,.acomp.nova,.acomp-corpo{animation:none!important}
+}
+/* leitura completa: a etiqueta "plantão" não pode empurrar a resposta para fora da linha */
+.qb.feita.do-plantao{grid-template-columns:20px minmax(0,1fr) auto}
+.qb.feita.do-plantao .rot{min-width:0;display:flex;align-items:center;flex-wrap:wrap;gap:2px 0}
+.qb.feita.do-plantao b{max-width:46vw}
+
+/* ---------- correção final (25/09): ordem e peso ---------- */
+/* alerta que muda a leitura do supra (Brugada) vem antes do 6A: fio mais grosso, título maior */
+.pl-atencao.forte{border-left-width:4px;background:linear-gradient(140deg,rgba(164,124,255,.16),var(--glass))}
+.pl-atencao.forte strong{font-size:1.02rem;font-weight:600}
+.pl-atencao.forte .ix{color:var(--violet)}
+/* fecho com achado grave na tela: sem o teal de "tudo certo" */
+.pl-fim.fecha.neutro{border-left:2px solid var(--violet)}
+.pl-fim.fecha.neutro .ix,:root[data-theme="light"] .pl-fim.fecha.neutro .ix{color:var(--mute)}
+/* padrões de alto risco: miniaturas que abrem uma de cada vez */
+.pl-pads{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px}
+.pl-pad{appearance:none;display:flex;flex-direction:column;gap:4px;padding:5px;border-radius:12px;cursor:pointer;text-align:left;min-height:44px;
+  background:rgba(255,255,255,.04);border:1px solid var(--edge);color:var(--ink-2);font-size:.74rem;line-height:1.2}
+.pl-pad img{width:100%;height:56px;object-fit:cover;object-position:center;border-radius:8px;background:#fff;display:block}
+.pl-pad[aria-expanded="true"]{border-color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--ink-2);color:var(--ink)}
+.pl-pad-aberto{display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--edge)}
+:root[data-theme="light"] .pl-pad{background:rgba(255,255,255,.6)}

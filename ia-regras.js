@@ -27,7 +27,9 @@ function eixo(r){
   if (r.di === "neg" && r.avf === "pos") return "direita";
   return "extremo";
 }
-function faixaFC(r){ const f = r.fc; if (!f) return null; return f > 100 ? "alta" : f < 50 ? "baixa" : "normal"; }
+/* sem número, vale a faixa marcada no modo plantão (fcFaixa: "baixa" < 50, "normal" 50–100, "alta" > 100) */
+function faixaFC(r){ const f = r.fc; if (f) return f > 100 ? "alta" : f < 50 ? "baixa" : "normal"; return r.fcFaixa || null; }
+const fcTexto = r => r.fc ? r.fc + " bpm" : {baixa:"abaixo de 50 bpm", normal:"entre 50 e 100 bpm", alta:"acima de 100 bpm"}[faixaFC(r)] || "";
 const larguraQRS = r => r.qrs || r.qrs8 || null;
 function num(r, k){ const v = parseFloat(String(r[k] ?? "").replace(",", ".")); return isFinite(v) ? v : null; }
 const abreSgarbossa = (r, motivo) => larguraQRS(r) === "largo" && r.v1 === "bre" && (motivo === "dor" || (r.isq || []).includes("supra"));
@@ -40,8 +42,8 @@ function qt(r){
 }
 /* só o título do resultado da etapa 6 (arritmia() do app, sem construir tela); null enquanto falta resposta */
 function arritmia(r){
-  const fc = r.fc, reg = r.reg, sin = sinusal(r), faixa = faixaFC(r);
-  if (sin === null || !fc || !reg) return null;
+  const reg = r.reg, sin = sinusal(r), faixa = faixaFC(r);
+  if (sin === null || !faixa || !reg) return null;
   if (sin){
     if (!r.extra) return null;
     return faixa === "alta" ? "Taquicardia sinusal" : faixa === "baixa" ? "Bradicardia sinusal" : "Ritmo sinusal";
@@ -126,11 +128,11 @@ const REGRAS = [
     aula:"Aula 68 · Síncope; Aula 54 · Bloqueio AV; Aula 10 · Identificando o ritmo sinusal",
     testar(c){
       const r = c.r;
-      if (!(sinusal(r) === true && r.fc && r.fc < 50)) return null;
-      return { nivel:["bradi", "sincope"].includes(c.motivo) ? "atencao" : "info",
+      if (!(sinusal(r) === true && faixaFC(r) === "baixa")) return null;
+      return { nivel:c.tem("bradi") || c.tem("sincope") ? "atencao" : "info",
         titulo:"Bradicardia sinusal: toda P gera QRS?",
         texto:`Antes de fechar como bradicardia sinusal, confira no DII longo se toda onda P gera um QRS. Na aula 68, a P bloqueada estava escondida dentro da onda T (a T que parecia diferente das outras, mais apiculada) e o ritmo era um BAV total. No BAV 2:1, uma P conduz e a seguinte bloqueia (aula 54).`,
-        pergunta:`Marquei bradicardia sinusal com FC ${r.fc} bpm. Como eu confiro se não tem P bloqueada escondida na onda T?` };
+        pergunta:`Marquei bradicardia sinusal com FC ${fcTexto(r)}. Como eu confiro se não tem P bloqueada escondida na onda T?` };
     }},
 
   { id:"fa-com-bavt", etapa:6, nivel:"atencao",
@@ -149,10 +151,10 @@ const REGRAS = [
     aula:"Aula 50 · Taquicardia ventricular; Aula 47 · Introdução a taquiarritmias",
     testar(c){
       const r = c.r;
-      if (!(sinusal(r) === true && r.fc > 100 && larguraQRS(r) === "largo")) return null;
+      if (!(sinusal(r) === true && faixaFC(r) === "alta" && larguraQRS(r) === "largo")) return null;
       return { titulo:"Taquicardia de QRS largo: a P vem antes de cada QRS?",
         texto:`Você marcou taquicardia sinusal e o QRS saiu largo. Taquicardia de QRS largo só é sinusal com bloqueio de ramo se houver onda P precedendo cada QRS. Sem P antes do QRS, a aula 50 é clara: conduzir como taquicardia ventricular até que se prove o contrário. Volte ao DII longo e confira.`,
-        pergunta:`Marquei ritmo sinusal com FC ${r.fc} bpm e QRS largo. Como confirmo que é taquicardia sinusal com bloqueio de ramo e não TV?` };
+        pergunta:`Marquei ritmo sinusal com FC ${fcTexto(r)} e QRS largo. Como confirmo que é taquicardia sinusal com bloqueio de ramo e não TV?` };
     }},
 
   { id:"fc-150-flutter", etapa:6, nivel:"info",
@@ -181,7 +183,7 @@ const REGRAS = [
     gatilho:"Queixa de síncope com ritmo marcado como sinusal (o app não mede PR nem pausas)",
     aula:"Aula 41 · Olhar para o ECG sem olhar para o paciente; Aula 54 · Bloqueio AV; Aula 90 · Palpitação e desmaio",
     testar(c){
-      if (!(c.motivo === "sincope" && sinusal(c.r) === true && c.r.fc)) return null;
+      if (!(c.tem("sincope") && sinusal(c.r) === true && faixaFC(c.r))) return null;
       return { titulo:"Síncope: o que o app não mede, você confere",
         texto:`Na síncope, mais do que isquemia, o Dr. Vitor procura bloqueio AV, pausas, taquiarritmias e QT longo (aula 41). O app não mede o PR: confira no DII longo se toda P gera QRS e se o PR fica entre 3 e 5 quadradinhos (acima disso, BAV de 1º grau, aula 54). Procure também pausas: acima de 2 segundos já pode dar sintoma, acima de 3 costuma dar (aula 90).`,
         pergunta:"Paciente com síncope e ritmo sinusal no ECG. O que mais eu preciso procurar no traçado?" };
@@ -191,8 +193,8 @@ const REGRAS = [
     gatilho:"Queixa de síncope ou palpitação com supra de ST marcado na etapa 7",
     aula:"Aula 59 · Síndromes hereditárias arritmogênicas; Aula 93 · Síncope em jovem",
     testar(c){
-      if (!(["sincope", "palp"].includes(c.motivo) && (c.r.isq || []).includes("supra"))) return null;
-      const sinc = c.motivo === "sincope";
+      if (!((c.tem("sincope") || c.tem("palp")) && (c.r.isq || []).includes("supra"))) return null;
+      const sinc = c.tem("sincope");
       return { titulo:sinc ? "Supra em quem desmaiou: olhe V1 e V2" : "Supra em quem tem palpitação: olhe V1 e V2",
         texto:`Se o supra está em V1 e V2, com mais de 2 mm, e termina em onda T invertida, pense em síndrome de Brugada tipo 1 antes de isquemia (aulas 59 e 93). ${sinc
           ? "Pergunte se a síncope foi noturna ou sem pródromo, se houve febre como gatilho e se há morte súbita na família."
@@ -204,7 +206,7 @@ const REGRAS = [
     gatilho:"Queixa de palpitação com ritmo marcado como sinusal",
     aula:"Aula 60 · Síndrome de Wolff-Parkinson-White",
     testar(c){
-      if (!(c.motivo === "palp" && sinusal(c.r) === true && c.r.fc)) return null;
+      if (!(c.tem("palp") && sinusal(c.r) === true && faixaFC(c.r))) return null;
       return { titulo:"Palpitação em ritmo sinusal: olhe o PR e o começo do QRS",
         texto:`PR curto, com a P quase colada no QRS e uma "barriguinha" no início dele (onda delta), é pré-excitação. Em quem tem palpitação ou síncope, isso é Wolff-Parkinson-White, e o risco está na arritmia que ele pode fazer (aula 60). O app não mede o PR: essa conferência é sua.`,
         pergunta:"Palpitação e ECG em ritmo sinusal. Como reconheço PR curto e onda delta?" };
@@ -261,7 +263,7 @@ const REGRAS = [
     aula:"Aula 45 · Padrões de alto risco",
     testar(c){
       const r = c.r;
-      if (!(larguraQRS(r) === "largo" && r.v1 === "bre" && (r.isq || []).includes("infra") && r.infraV1 === "sim" && !abreSgarbossa(r, c.motivo))) return null;
+      if (!(larguraQRS(r) === "largo" && r.v1 === "bre" && (r.isq || []).includes("infra") && r.infraV1 === "sim" && !abreSgarbossa(r, c.tem("dor") ? "dor" : c.motivo))) return null;
       return { titulo:"BRE com infra em V1–V3 não é o esperado",
         texto:`No BRE, o esperado em V1–V3 é o ST discordante do QRS negativo, para cima. Infra concordante de 1 mm ou mais em V1–V3 é critério de Sgarbossa e, na aula 45, equivalente de infarto com supra. O app só abre o Sgarbossa com dor torácica ou supra marcado: se houver qualquer equivalente anginoso, trate esse infra como achado de alto risco.`,
         pergunta:"BRE com infra de ST em V1 a V3. Isso entra nos critérios de Sgarbossa?" };
@@ -272,7 +274,7 @@ const REGRAS = [
     aula:"Aula 55 · Dispneia e bloqueio de ramos; Aula 44 · Infra de ST e inversão de onda T",
     testar(c){
       const r = c.r, m = r.isq || [];
-      if (c.motivo === "dor" || larguraQRS(r) !== "largo") return null;
+      if (c.tem("dor") || larguraQRS(r) !== "largo") return null;
       if (r.v1 === "brd" && m.includes("tinv")) return { titulo:"BRD: T negativa em V1–V3 é do bloqueio",
         texto:`No BRD, ondas T negativas de V1 a V3 são o padrão esperado e não indicam isquemia (aula 55). Se a inversão que você marcou na etapa 7 está só em V1–V3, ela é do bloqueio; se aparece fora dessas derivações, aí vale olhar de novo.`,
         pergunta:"BRD com T invertida. Como sei se a inversão é do bloqueio ou isquêmica?" };
@@ -288,18 +290,18 @@ const REGRAS = [
     testar(c){
       const q = qt(c.r);
       if (!q || !q.longo) return null;
-      const acima500 = q.qtc > 500, queixa = ["sincope", "palp"].includes(c.motivo), largo = larguraQRS(c.r) === "largo";
+      const acima500 = q.qtc > 500, queixa = c.tem("sincope") || c.tem("palp"), largo = larguraQRS(c.r) === "largo";
       if (!acima500 && !queixa) return null;
       const partes = [];
       if (largo) partes.push("O QRS é largo, e o alargamento do QRS pode prolongar o QT pelo aumento da duração da despolarização ventricular: interprete o QTc com cautela.");
       if (acima500) partes.push(`QTc de ${q.qtc} ms: acima de 500 ms o risco de torsades de pointes é alto (aula 59).`);
-      if (queixa) partes.push(`Na ${c.motivo === "sincope" ? "síncope" : "palpitação"}, QT longo é uma das causas arrítmicas a procurar (aula 41).`);
+      if (queixa) partes.push(`Na ${c.tem("sincope") ? "síncope" : "palpitação"}, QT longo é uma das causas arrítmicas a procurar (aula 41).`);
       partes.push("Revise o que alonga o QT: amiodarona, macrolídeos como azitromicina, haloperidol, álcool, cocaína, hipocalemia e hipocalcemia (aula 59).");
       // com QRS largo o número não fecha sozinho: o aviso desce para info e começa pela ressalva
       return { nivel:largo ? "info" : "atencao",
         titulo:largo ? "QTc longo com QRS largo: interprete com cautela" : acima500 ? "QTc acima de 500 ms" : "QT longo com queixa arrítmica",
         texto:partes.join(" "),
-        pergunta:`QTc de ${q.qtc} ms${largo ? " com QRS largo" : ""}${queixa ? " em paciente com " + (c.motivo === "sincope" ? "síncope" : "palpitação") : ""}. O que eu preciso revisar?` };
+        pergunta:`QTc de ${q.qtc} ms${largo ? " com QRS largo" : ""}${queixa ? " em paciente com " + (c.tem("sincope") ? "síncope" : "palpitação") : ""}. O que eu preciso revisar?` };
     }},
 
   { id:"hipercalemia-qrs-largo", etapa:10, nivel:"atencao",
@@ -333,11 +335,11 @@ const REGRAS = [
     aula:"Aula 45 · Padrões de alto risco; Aula 74 · Faltou hemodiálise; Aula 58 · Distúrbios eletrolíticos",
     testar(c){
       const r = c.r;
-      if ((r.padroes || []).includes("hiper") && c.motivo !== "dor") return { etapa:7,
+      if ((r.padroes || []).includes("hiper") && !c.tem("dor")) return { etapa:7,
         titulo:"T alta e apiculada sem dor torácica: pense no potássio",
         texto:`A T hiperaguda da oclusão aparece na dor típica recente e respeita a parede; a da hipercalemia costuma ser difusa e de base mais estreita (aulas 45 e 74). Sem dor, pense no potássio: renal crônico, diálise perdida, IECA, BRA ou espironolactona (aula 58). Se for o caso, marque hipercalemia na etapa 10.`,
         pergunta:"T alta e apiculada num paciente sem dor torácica. Como diferencio T hiperaguda de hipercalemia?" };
-      if ((r.esp || []).includes("hiperk") && r.hk1 === "sim" && c.motivo === "dor") return { etapa:10,
+      if ((r.esp || []).includes("hiperk") && r.hk1 === "sim" && c.tem("dor")) return { etapa:10,
         titulo:"Dor torácica com T apiculada: potássio ou oclusão?",
         texto:`Antes de fechar em hipercalemia, lembre que a T hiperaguda é a primeira manifestação da oclusão coronariana, nos primeiros minutos, e respeita a parede; a da hipercalemia costuma ser difusa (aula 45). Quem decide é o contexto clínico.`,
         pergunta:"Dor torácica e T apiculada. Como separo T hiperaguda de hipercalemia?" };
@@ -349,7 +351,7 @@ const REGRAS = [
     aula:"Aula 57 · ECG no TEP; Aula 41 · Olhar para o ECG sem olhar para o paciente",
     testar(c){
       const r = c.r, esp = r.esp || [];
-      if (!(c.motivo === "disp" && esp.length && !esp.includes("tep"))) return null;
+      if (!(c.tem("disp") && esp.length && !esp.includes("tep"))) return null;
       const a = tepAchados(r);
       if (!a.length) return null;
       return { titulo:"Dispneia com achados que podem ocorrer no TEP",
@@ -361,7 +363,11 @@ const REGRAS = [
 /* ---------- avaliar ----------
    leitura: {motivo, r, passo?}. Com passo, só volta o que já foi alcançado (etapa ≤ passo). */
 function avaliar(leitura){
-  const L = leitura || {}, c = {motivo:L.motivo || null, r:L.r || {}};
+  const L = leitura || {};
+  // as queixas: no modo plantão o médico pode somar mais de uma, em qualquer ordem (S.cur.plantao.queixas); a regra que
+  // olha a queixa vale para qualquer uma delas, para o mesmo paciente dar o mesmo alerta. Fora do plantão, só a da etapa 1.
+  const qx = L.queixas || (L.plantao && L.plantao.queixas) || (L.motivo ? [L.motivo] : []);
+  const c = {motivo:L.motivo || qx[0] || null, r:L.r || {}, tem:q => qx.includes(q) || L.motivo === q};
   const out = [];
   REGRAS.forEach(g => {
     let a = null;
@@ -414,7 +420,7 @@ const PORQUE = {
 };
 
 const API = {avaliar, alertasDaEtapa, PORQUE, REGRAS:REGRAS.map(g => ({id:g.id, etapa:g.etapa, nivel:g.nivel, gatilho:g.gatilho, aula:g.aula})),
-  _apoio:{sinusal, eixo, arritmia, qt, tepAchados, abreSgarbossa}};
+  _apoio:{sinusal, eixo, arritmia, qt, tepAchados, abreSgarbossa, faixaFC}};
 if (typeof module === "object" && module.exports) module.exports = API;
 else raiz.IARegras = API;
 

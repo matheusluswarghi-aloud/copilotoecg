@@ -21,7 +21,8 @@ let simulado = local && new URLSearchParams(location.search).get("ia") === "simu
 
 let A = null;         // o que o app.js entrega (configurar)
 let I = {};           // ícones do app
-const E = {turnos:[], ctxFora:null, restantes:null, limite:null, texto:"", abertos:{}};
+// dono: a leitura (o paciente) de que a conversa trata. Paciente novo = conversa nova (Rafael P1-6, 25/09)
+const E = {turnos:[], ctxFora:null, restantes:null, limite:null, texto:"", abertos:{}, dono:null};
 let corrente = null;  // resposta em andamento: {tu, ctl, fila, rodando}
 let teclado = false, alturaCheia = 0;
 
@@ -41,11 +42,11 @@ function carregar(){
       if (t.estado === "pensando" || t.estado === "vindo") t.estado = "interrompida";
       return t;
     });
-    E.ctxFora = g.ctxFora || null; E.restantes = g.restantes ?? null; E.limite = g.limite || null;
+    E.ctxFora = g.ctxFora || null; E.restantes = g.restantes ?? null; E.limite = g.limite || null; E.dono = g.dono || null;
   } catch(_){}
 }
 function gravar(){
-  try { sessionStorage.setItem(CHAVE, JSON.stringify({turnos:E.turnos, ctxFora:E.ctxFora, restantes:E.restantes, limite:E.limite})); } catch(_){}
+  try { sessionStorage.setItem(CHAVE, JSON.stringify({turnos:E.turnos, ctxFora:E.ctxFora, restantes:E.restantes, limite:E.limite, dono:E.dono})); } catch(_){}
 }
 /* durante o streaming: grava no máximo uma vez por segundo, para recarregar no meio não perder o que já está na tela */
 let ultimaGravacao = 0, gravarDepois = null;
@@ -57,8 +58,20 @@ function gravarAos(){
 function esquecer(){
   clearTimeout(gravarDepois); gravarDepois = null;
   if (corrente) try { corrente.ctl.abort(); } catch(_){}
-  corrente = null; E.turnos = []; E.ctxFora = null; E.restantes = null; E.limite = null; E.texto = ""; E.abertos = {};
+  corrente = null; E.turnos = []; E.ctxFora = null; E.restantes = null; E.limite = null; E.texto = ""; E.abertos = {}; E.dono = null;
   try { sessionStorage.removeItem(CHAVE); } catch(_){}
+}
+/* conversa nova (o limite do dia fica): o lápis "Nova conversa", o paciente descartado ou outro paciente aberto */
+function novaConversa(){
+  clearTimeout(gravarDepois); gravarDepois = null;
+  if (corrente) try { corrente.ctl.abort(); } catch(_){}
+  corrente = null; E.turnos = []; E.abertos = {}; E.ctxFora = null; E.texto = ""; E.dono = null; gravar();
+}
+/* a conversa é do paciente, não do aparelho: se ela foi feita com outra leitura, começa outra */
+function conferirDono(){
+  if (!E.dono || !E.turnos.length) return;
+  const L = A.leitura();
+  if (L && L.id !== E.dono) novaConversa();
 }
 const limiteAtivo = () => !!E.limite && E.limite.dia === hoje();
 
@@ -92,17 +105,20 @@ function leituraCtx(){
   const L = A.leitura();
   return L && E.ctxFora !== L.id ? L : null;
 }
+const daPlantao = () => A && A.daPlantao ? A.daPlantao() : null;
 function topoHTML(){
-  const d = A.daEtapa();
+  const d = A.daEtapa(), pl = daPlantao();
   const nova = E.turnos.length ? `<button class="icobtn" type="button" data-ia-nova="1" aria-label="Nova conversa">${I.nova}</button>` : "";
   const sim = simulado ? `<span class="tag ia-sim" title="Respostas falsas, só no teste local">simulado</span>` : "";
   // vindo da etapa: só "Etapa 8 · QRS" (o "leitura continua aberta" cortava em 390/430 px); o voltar já diz o resto
+  if (pl) return `<div class="top"><button class="icobtn ghost" type="button" data-ia-voltar="1" aria-label="Voltar ao modo plantão">${I.voltar}</button><div class="t"><small>Modo plantão · ${esc(pl.rotulo)}</small><strong>Copiloto IA</strong></div>${sim}${nova}</div>`;
   return d
     ? `<div class="top"><button class="icobtn ghost" type="button" data-ia-voltar="1" aria-label="Voltar à etapa ${d}, a leitura continua aberta">${I.voltar}</button><div class="t"><small>Etapa ${d} · ${esc(A.PASSOS[d])}</small><strong>Copiloto IA</strong></div>${sim}${nova}</div>`
     : `<div class="top"><div class="t"><strong>Copiloto IA</strong></div>${sim}${nova}</div>`;
 }
 function tela(){
-  const d = A.daEtapa(), cls = ["screen", "ia"];
+  conferirDono();
+  const d = A.daEtapa() || daPlantao(), cls = ["screen", "ia"];
   if (d) cls.push("sem-nav");
   if (teclado) cls.push("teclado");
   return `<div class="${cls.join(" ")}">${topoHTML()}<div class="scroll ia-rolo" id="ia-rolo">${roloHTML()}</div><div class="ia-pe" id="ia-pe">${peHTML()}</div>${d ? "" : A.nav()}</div>`;
@@ -115,16 +131,25 @@ function atualizarTopo(){
   top.replaceWith(novo); montar(novo);
 }
 function avisoSemSinal(){
-  return `<div class="ia-aviso" id="ia-offline">${I.semSinal}<div><strong>A IA precisa de sinal.</strong><p>O resto do app segue funcionando: a leitura, as calculadoras e o “Por que isso importa?” de cada etapa não dependem de internet.</p>${A.leitura() ? `<button class="btn small" type="button" data-ia-leitura="1">Voltar à leitura ${I.seta}</button>` : ""}</div></div>`;
+  const pl = daPlantao();
+  return `<div class="ia-aviso" id="ia-offline">${I.semSinal}<div><strong>A IA precisa de sinal.</strong><p>O resto do app segue funcionando: ${pl ? "o modo plantão, " : ""}a leitura, as calculadoras e o “Por que isso importa?” de cada etapa não dependem de internet.</p>${A.leitura() ? `<button class="btn small" type="button" data-ia-leitura="1">${pl ? "Voltar ao modo plantão" : "Voltar à leitura"} ${I.seta}</button>` : ""}</div></div>`;
 }
 function roloHTML(){
   const off = !online(), L = leituraCtx();
   let h = off ? avisoSemSinal() : "";
-  if (!E.turnos.length){
+  const pl = daPlantao();
+  if (!E.turnos.length && pl){
+    h += `<div class="ia-intro"><span class="eyebrow">Modo plantão · ${esc(pl.rotulo)}</span><h2>O que ficou em dúvida?</h2><p class="ink2">A IA vê o que você marcou. A resposta vem das aulas do ECG Descomplicado e diz de qual aula saiu.</p></div>`;
+    h += `<div class="ia-sugs">${pl.sugestoes.map(s => `<button class="ia-sug" type="button" data-ia-sug="${esc(s)}" ${off || limiteAtivo() ? "disabled" : ""}><span>${esc(s)}</span>${I.seta}</button>`).join("")}</div>`;
+  } else if (!E.turnos.length){
     h += L
       ? `<div class="ia-intro"><span class="eyebrow">Etapa ${L.passo} de 11 · ${esc(A.PASSOS[L.passo])}</span><h2>O que ficou em dúvida ${NO[L.passo] || "nesta etapa"}?</h2><p class="ink2">A resposta vem das aulas do ECG Descomplicado e diz de qual aula saiu.</p></div>`
       : `<div class="ia-intro"><h2>O que ficou em dúvida?</h2><p class="ink2">A resposta vem das aulas do ECG Descomplicado e diz de qual aula saiu. Quem lê o eletro é você: a IA não olha a foto e não dá laudo.</p></div>`;
-    h += `<div class="ia-sugs">${sugestoes(L).map(s => `<button class="ia-sug" type="button" data-ia-sug="${esc(s)}" ${off || limiteAtivo() ? "disabled" : ""}><span>${esc(s)}</span>${I.seta}</button>`).join("")}</div>`;
+    // vinda da etapa pela faixa "acompanhando": a pergunta em aberto vira a primeira sugestão (nada é enviado sozinho)
+    const d = A.daEtapa(), pa = d && L ? A.perguntaAtiva() : null;
+    const daEtapa = pa ? `<button class="ia-sug da-etapa" type="button" data-ia-sug="${esc(`Estou na etapa ${d} (${A.PASSOS[d]}), na pergunta "${pa.titulo}". Como eu confiro isso no traçado?`)}" ${off || limiteAtivo() ? "disabled" : ""}><span><small>Pergunta em aberto</small>Me ajude com esta: “${esc(pa.titulo)}”</span>${I.seta}</button>` : "";
+    const lista = pa ? (SUG[L.passo] || SUG.geral).slice(0, 2) : sugestoes(L);
+    h += `<div class="ia-sugs">${daEtapa}${lista.map(s => `<button class="ia-sug" type="button" data-ia-sug="${esc(s)}" ${off || limiteAtivo() ? "disabled" : ""}><span>${esc(s)}</span>${I.seta}</button>`).join("")}</div>`;
     if (!A.leitura()) h += `<div class="card tight ia-convite"><p class="small ink2">Com uma leitura aberta, a IA vê as suas respostas e responde sobre aquele eletro.</p><button class="btn wide" type="button" data-ia-ler="1">${I.ecg}Ler um eletro agora</button></div>`;
   }
   h += E.turnos.map(turnoHTML).join("");
@@ -133,6 +158,8 @@ function roloHTML(){
 function ctxHTML(){
   const L = A.leitura(); if (!L) return "";
   if (E.ctxFora === L.id) return `<div class="ia-ctx fora"><span>Sem a leitura em andamento.</span><button class="textbtn" type="button" data-ia-ctx="usar">Usar a leitura</button></div>`;
+  const pl = daPlantao();
+  if (pl) return `<div class="ia-ctx">${I.ecg}<div class="t"><small><i class="ia-ctx-l">Estou vendo o </i>modo plantão</small><span>${esc(pl.itens.join(" · "))}</span></div><button class="icobtn ghost" type="button" data-ia-ctx="tirar" aria-label="Tirar o modo plantão desta conversa">${I.fechar}</button></div>`;
   const c = A.contexto();
   return `<div class="ia-ctx">${I.ecg}<div class="t"><small><i class="ia-ctx-l">Estou vendo sua </i>leitura · etapa ${L.passo}</small><span>${esc(c.itens.join(" · ") || A.PASSOS[L.passo])}</span></div><button class="icobtn ghost" type="button" data-ia-ctx="tirar" aria-label="Tirar a leitura desta conversa">${I.fechar}</button></div>`;
 }
@@ -140,7 +167,7 @@ function peHTML(){
   // uma coisa só: a frase da função ("Você chegou ao limite…") repetia o título
   if (limiteAtivo()) return `<div class="ia-aviso ia-limite">${I.relogio}<div><strong>Você usou as perguntas de hoje.</strong><p>A contagem volta à meia-noite. A leitura, as calculadoras e o “Por que isso importa?” seguem liberados.</p></div></div>`;
   const off = !online(), rodando = !!corrente, L = leituraCtx();
-  const ph = off ? "Sem sinal agora" : L ? "Pergunte sobre esta leitura" : "Pergunte sobre ECG";
+  const ph = off ? "Sem sinal agora" : L && daPlantao() ? "Pergunte sobre este caso" : L ? "Pergunte sobre esta leitura" : "Pergunte sobre ECG";
   const n = E.restantes;
   return `${n != null && n <= 5 ? `<p class="ia-restam" id="ia-restam">${n === 1 ? "Resta 1 pergunta hoje" : `Restam ${n} perguntas hoje`}</p>` : ""}${ctxHTML()}
     <form class="ia-campo" id="ia-campo"><textarea id="ia-txt" rows="1" maxlength="${MAX_PERGUNTA}" placeholder="${ph}" aria-label="Sua pergunta" enterkeyhint="send" ${off ? "disabled" : ""}>${esc(E.texto)}</textarea>
@@ -439,6 +466,7 @@ async function enviar(texto, op){
   if (!online()){ avisar("A IA precisa de sinal"); return; }
   const L = leituraCtx(), ctx = L ? A.contexto() : null;
   const tu = {eu:pergunta, blocos:[], estado:"pensando", ctx:ctx ? ctx.objeto : null};
+  if (L && !E.turnos.length) E.dono = L.id;       // a conversa passa a ser deste paciente
   const historico = historicoAte(E.turnos.length);
   E.turnos.push(tu); E.texto = "";
   const st = corrente = {tu, ctl:new AbortController(), fila:[], rodando:false};
@@ -727,6 +755,8 @@ function configurar(api){
 }
 window.CopilotoIA = {
   configurar, tela, esquecer, perguntaPorque, enviar,
+  // o paciente foi descartado: a conversa que era dele não passa para o próximo
+  leituraAcabou(id){ if (E.dono && E.dono === id) novaConversa(); },
   // depois que o app pôs a tela no DOM
   montar(raiz){ montar(raiz || document); teclado = false; setTimeout(aoViewport, 0); const r = $("ia-rolo"); if (r && E.turnos.length && !corrente) r.scrollTop = r.scrollHeight; vigiarRolo(); },
   rodando: () => !!corrente,

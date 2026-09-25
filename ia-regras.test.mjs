@@ -267,3 +267,52 @@ test("nenhum texto usa frase listada em aulas/duvidas-vitor.md", () => {
     for (const d of duvidas) assert.ok(!n.includes(d), `usa frase em dúvida: "${d}"`);
   }
 });
+
+/* ---------- modo plantão: FC em faixa (fcFaixa), sem número (spec 2.2) ---------- */
+test("faixaFC: o número manda; sem número, vale a faixa do plantão", () => {
+  const f = IA._apoio.faixaFC;
+  assert.equal(f({fc:44}), "baixa"); assert.equal(f({fc:72}), "normal"); assert.equal(f({fc:120}), "alta");
+  assert.equal(f({fc:120, fcFaixa:"baixa"}), "alta");
+  assert.equal(f({fcFaixa:"baixa"}), "baixa"); assert.equal(f({fcFaixa:"alta"}), "alta");
+  assert.equal(f({}), null);
+});
+test("arritmia() fecha com a faixa, igual ao número da mesma faixa", () => {
+  const A = IA._apoio.arritmia;
+  const casos = [
+    [{ritmo:"sim", reg:"regular", extra:"nao"}, "baixa", 44], [{ritmo:"sim", reg:"regular", extra:"nao"}, "alta", 120],
+    [{ritmo:"nao", reg:"regular", qrs:"estreito", tq:"nenhum"}, "alta", 160], [{ritmo:"nao", reg:"irregular", qrs:"largo"}, "alta", 180],
+    [{ritmo:"nao", reg:"irregular", temP:"sim", rel:"algumas", bav:"21"}, "baixa", 40], [{ritmo:"nao", reg:"irregular", pind:"sim"}, "normal", 72]];
+  for (const [r, faixa, n] of casos){
+    assert.equal(A(Object.assign({fcFaixa:faixa}, r)), A(Object.assign({fc:n}, r)), JSON.stringify(r));
+    assert.ok(A(Object.assign({fcFaixa:faixa}, r)));
+  }
+  assert.equal(A({ritmo:"sim", reg:"regular", extra:"nao"}), null, "sem FC nenhuma não fecha");
+});
+test("regras com guarda de FC disparam com a faixa; as que precisam do número, não", () => {
+  const com = (motivo, r) => IA.avaliar({motivo, r}).map(a => a.id);
+  assert.ok(com("bradi", {ritmo:"sim", fcFaixa:"baixa"}).includes("bradicardia-sinusal-p-conduz"));
+  assert.ok(com("sincope", {ritmo:"sim", fcFaixa:"normal"}).includes("sincope-conducao"));
+  assert.ok(com("palp", {ritmo:"sim", fcFaixa:"alta"}).includes("palpitacao-pre-excitacao"));
+  assert.ok(com("dor", {ritmo:"sim", fcFaixa:"alta", qrs:"largo"}).includes("taquicardia-sinusal-qrs-largo"));
+  assert.ok(com("palp", {ritmo:"nao", reg:"irregular", fcFaixa:"alta", qrs:"largo"}).includes("fa-pre-excitada"));
+  assert.ok(!com("bradi", {ritmo:"nao", reg:"regular", fcFaixa:"baixa", temP:"nao"}).includes("fa-com-bavt"), "fa-com-bavt precisa do número (< 40)");
+  assert.ok(!com("palp", {ritmo:"sim", reg:"regular", fcFaixa:"alta", extra:"nao"}).includes("fc-150-flutter"), "fc-150-flutter precisa do número");
+  const p = IA.avaliar({motivo:"bradi", r:{ritmo:"sim", fcFaixa:"baixa"}}).find(a => a.id === "bradicardia-sinusal-p-conduz");
+  assert.ok(!/undefined/.test(p.pergunta_para_ia + p.texto), "sem número, nada de 'undefined' no texto");
+  assert.match(p.pergunta_para_ia, /abaixo de 50 bpm/);
+});
+test("modo plantão com queixas somadas: o mesmo paciente dá os mesmos alertas em qualquer ordem (I2, 25/09)", () => {
+  const ids = (qx, r) => IA.avaliar({motivo:qx[0], queixas:qx, r}).map(a => a.id).sort().join(",");
+  const bre = {qrs:"largo", v1:"bre", isq:["infra"], infraV1:"sim"};
+  // Palpitação + Dor = Dor + Palpitação: com a dor entre as queixas o Sgarbossa abre, então o alerta "o app só abre o Sgarbossa com dor" não sai
+  assert.equal(ids(["palp", "dor"], bre), ids(["dor", "palp"], bre));
+  assert.ok(!ids(["palp", "dor"], bre).includes("bre-infra-v1v3-sgarbossa"));
+  const supra = {isq:["supra"], supraDist:"sim", terr:["ant"]};
+  assert.equal(ids(["dor", "sincope"], supra), ids(["sincope", "dor"], supra));
+  assert.ok(ids(["dor", "sincope"], supra).includes("sincope-supra-brugada"));
+  // fora do plantão (sem queixas), só a queixa da etapa 1, como antes
+  assert.ok(IA.avaliar({motivo:"palp", r:bre}).map(a => a.id).includes("bre-infra-v1v3-sgarbossa"));
+  assert.ok(!IA.avaliar({motivo:"dor", r:supra}).map(a => a.id).includes("sincope-supra-brugada"));
+  // a leitura inteira (S.cur) traz as queixas em plantao.queixas
+  assert.ok(IA.avaliar({motivo:"dor", plantao:{queixas:["dor", "sincope"]}, r:supra}).map(a => a.id).includes("sincope-supra-brugada"));
+});

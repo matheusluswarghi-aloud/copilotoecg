@@ -69,7 +69,7 @@ function gravarAndamento(){
   // foto, a foto da anterior ficaria órfã no banco.
   const a = lerJSON(CHAVE_AND, null);
   if (a && a.id !== c.id && !c.tela) apagarFoto(FOTO_AND);
-  gravarJSON(CHAVE_AND, {id:c.id, quando:c.quando, motivo:c.motivo, passo:c.passo, r:c.r, conf:c.conf, escala:c.escala, calQuadrados:c.calQuadrados, pontos:c.pontos, foto:c.foto, temFoto:!!c.tela, dock:S.dock, tutoraVista:c.tutoraVista || {}, salvoEm:Date.now()});
+  gravarJSON(CHAVE_AND, {id:c.id, quando:c.quando, motivo:c.motivo, passo:c.passo, r:c.r, conf:c.conf, escala:c.escala, calQuadrados:c.calQuadrados, pontos:c.pontos, foto:c.foto, temFoto:!!c.tela, dock:S.dock, tutoraVista:c.tutoraVista || {}, plantao:c.plantao || null, salvoEm:Date.now()});
 }
 function lerAndamento(){
   const a = lerJSON(CHAVE_AND, null); if (!a) return null;
@@ -81,7 +81,7 @@ async function continuarLeitura(){
   const a = lerAndamento(); if (!a) return;
   if (!(S.cur.id === a.id && S.cur.motivo)){                 // ainda na memória: é só voltar para a etapa
     const c = nova();
-    Object.assign(c, {id:a.id, quando:a.quando, motivo:a.motivo, passo:a.passo, r:a.r || {}, conf:a.conf || {}, escala:a.escala || null, calQuadrados:a.calQuadrados || 5, pontos:a.pontos || c.pontos, foto:a.foto || null, tutoraVista:a.tutoraVista || {}});
+    Object.assign(c, {id:a.id, quando:a.quando, motivo:a.motivo, passo:a.passo, r:a.r || {}, conf:a.conf || {}, escala:a.escala || null, calQuadrados:a.calQuadrados || 5, pontos:a.pontos || c.pontos, foto:a.foto || null, tutoraVista:a.tutoraVista || {}, plantao:a.plantao || null});
     if (a.temFoto){
       const blob = await lerFoto(FOTO_AND) || await lerFoto(a.id);
       if (blob){ try { c.tela = await prepararFoto(blob); c.blob = blob; if (!c.foto) c.foto = analisarQualidade(c.tela); } catch(_){} }
@@ -89,10 +89,13 @@ async function continuarLeitura(){
     }
     S.cur = c; S.dock = a.dock || "aberto"; S.vista = null; S.aberto = {};
   }
-  S.editando = null; S.iaDaEtapa = null; S.tela = "seq"; desenhar(true);
+  S.editando = null; S.iaDaEtapa = null; S.iaDoPlantao = false;
+  // leitura começada pelo modo plantão e que ainda não foi para a leitura completa: volta para o plantão
+  S.tela = emPlantao() ? "plantao" : "seq"; desenhar(true);
 }
+const emPlantao = () => !!(S.cur.plantao && S.cur.plantao.tela !== "completa");
 /* a tela não pode apagar no meio da leitura; fora dela, o aparelho volta ao normal */
-const emLeitura = () => ["motivo", "foto", "seq", "medir", "ver", "laudo"].includes(S.tela);
+const emLeitura = () => ["motivo", "foto", "seq", "medir", "ver", "laudo", "plantao"].includes(S.tela);
 async function travarTela(ligar){ await Plataforma.telaAcesa(ligar); }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && emLeitura()) travarTela(true); });
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); S.instalar = e; });
@@ -156,7 +159,10 @@ function eixo(){
   if (r.di === "neg" && r.avf === "pos") return {t:"Desvio do eixo para a direita", k:"warn"};
   return {t:"Desvio extremo do eixo", k:"bad"};
 }
-function faixaFC(){ const f = R().fc; if (!f) return null; return f > 100 ? "alta" : f < 50 ? "baixa" : "normal"; }
+/* sem número, vale a faixa marcada no modo plantão (fcFaixa, a única chave nova do plantão; espelhada em ia-regras.js) */
+const faixaDe = f => f > 100 ? "alta" : f < 50 ? "baixa" : "normal";
+function faixaFC(){ const f = R().fc; if (f) return faixaDe(f); return R().fcFaixa || null; }
+const FAIXA_NOME = {baixa:"abaixo de 50", normal:"50 a 100", alta:"acima de 100"};
 
 /* Etapa 6: parte do que o médico já respondeu e só pergunta o que falta. Sem construtor, só calcula. */
 function arritmia(B){
@@ -165,12 +171,14 @@ function arritmia(B){
   const fim = (res, extra) => ({pronto:true, res, extra});
   const falta = () => ({pronto:false});
   const SN = [["nao","Não"],["sim","Sim"]]; // Não antes de Sim: é a ordem dos botões do roteiro nesta etapa, ao contrário de SIMNAO
-  if (sin === null || !fc || !reg) return falta();
+  // modo plantão: com só a faixa (sem número), os textos "FC N bpm" saem vazios
+  const fcTxt = () => fc ? `FC ${fc} bpm.` : "", fcFim = s => fc ? `${s}, FC ${fc} bpm.` : s + ".";
+  if (sin === null || !faixa || !reg) return falta();
 
   if (sin){
-    const res = faixa === "alta" ? {t:"Taquicardia sinusal", d:`Ritmo sinusal com FC de ${fc} bpm.`, k:"warn"}
-      : faixa === "baixa" ? {t:"Bradicardia sinusal", d:`Ritmo sinusal com FC de ${fc} bpm.`, k:"warn"}
-      : {t:"Ritmo sinusal", d:`FC de ${fc} bpm.`, k:"ok"};
+    const res = faixa === "alta" ? {t:"Taquicardia sinusal", d:fc ? `Ritmo sinusal com FC de ${fc} bpm.` : "", k:"warn"}
+      : faixa === "baixa" ? {t:"Bradicardia sinusal", d:fc ? `Ritmo sinusal com FC de ${fc} bpm.` : "", k:"warn"}
+      : {t:"Ritmo sinusal", d:fc ? `FC de ${fc} bpm.` : "", k:"ok"};
     B.res(res.k, res.t, res.d);
     B.escolha("extra", {curto:"Batimentos diferentes", titulo:"Há batimentos diferentes do ritmo habitual?", opcoes:SN});
     if (!r.extra) return falta();
@@ -182,7 +190,7 @@ function arritmia(B){
     return fim(res, ex);
   }
 
-  B.texto(`<div class="chips"><span class="chip info">ritmo <b>não sinusal</b></span><span class="chip info"><b>${reg}</b></span><span class="chip info">FC <b>${fc}</b> bpm</span></div>`);
+  B.texto(`<div class="chips"><span class="chip info">ritmo <b>não sinusal</b></span><span class="chip info"><b>${reg}</b></span><span class="chip info">${fc ? `FC <b>${fc}</b> bpm` : `FC <b>${FAIXA_NOME[faixa]}</b>`}</span></div>`);
   const resultado = res => { B.res(res.k, res.t, res.d); return fim(res); };
 
   const perguntaQRS = () => {
@@ -201,13 +209,13 @@ function arritmia(B){
       B.escolha("tq", {curto:"Atividade atrial", titulo:"Você identifica:", opcoes:[["flutter","Ondas F de flutter"],["patrial","Ondas P não sinusais"],["nenhum","Nenhum dos dois"]]});
       if (!r.tq) return falta();
       const res = {flutter:{t:"Flutter atrial"}, patrial:{t:"Taquicardia atrial"}, nenhum:{t:"Taquicardia supraventricular"}}[r.tq];
-      res.d = `FC ${fc} bpm.`; res.k = "warn";
+      res.d = fcTxt(); res.k = "warn";
       return resultado(res);
     }
     if (r.qrs === "estreito"){
       B.escolha("pind", {curto:"Ondas P individualizadas", titulo:"Você identifica ondas P individualizadas?", opcoes:SN});
       if (!r.pind) return falta();
-      return resultado(r.pind === "nao" ? {t:"Fibrilação atrial de alta resposta ventricular", d:`FC ${fc} bpm.`, k:"warn"}
+      return resultado(r.pind === "nao" ? {t:"Fibrilação atrial de alta resposta ventricular", d:fcTxt(), k:"warn"}
         : {t:"Taquicardia irregular com ondas P individualizadas", d:"Considere taquicardia atrial multifocal ou extrassístoles atriais frequentes como causa de irregularidade.", k:"warn"});
     }
     if (reg === "regular") return resultado({t:"Taquicardia regular de QRS largo", d:"Considere taquicardia ventricular até que se prove o contrário.", k:"bad"});
@@ -221,8 +229,8 @@ function arritmia(B){
     if (r.temP === "nao"){
       if (reg === "irregular") return resultado({t:"Considerar fibrilação atrial com baixa resposta ventricular", d:"Ritmo irregular, sem ondas P individualizadas.", k:"warn"});
       if (!perguntaQRS()) return falta();
-      return resultado(r.qrs === "estreito" ? {t:"Considerar escape juncional", d:`Ritmo regular, sem onda P, QRS estreito, FC ${fc} bpm.`, k:"warn"}
-        : {t:"Considerar escape ventricular", d:`Ritmo regular, sem onda P, QRS largo, FC ${fc} bpm.`, k:"bad"});
+      return resultado(r.qrs === "estreito" ? {t:"Considerar escape juncional", d:fcFim("Ritmo regular, sem onda P, QRS estreito"), k:"warn"}
+        : {t:"Considerar escape ventricular", d:fcFim("Ritmo regular, sem onda P, QRS largo"), k:"bad"});
     }
     B.escolha("rel", {curto:"Relação P–QRS", titulo:"P e QRS têm relação?", opcoes:[["nao","Não"],["algumas","Sim, mas algumas P não conduzem","Algumas P não conduzem"],["todas","Todas conduzem 1:1"]]});
     if (!r.rel) return falta();
@@ -231,22 +239,22 @@ function arritmia(B){
     B.escolha("bav", {curto:"Como as P bloqueiam", titulo:"Como as P deixam de conduzir?", opcoes:[["m1","PR aumenta progressivamente até uma P bloquear","PR aumenta até bloquear"],["m2","PR constante, até que uma P bloqueia","PR constante, P bloqueia"],["21","Condução 2:1"],["avancado","Duas ou mais P consecutivas não conduzidas","2 ou mais P bloqueadas"]]});
     if (!r.bav) return falta();
     const res = {m1:{t:"BAV de 2º grau Mobitz I", k:"warn"}, m2:{t:"BAV de 2º grau Mobitz II", k:"bad"}, "21":{t:"BAV 2:1", k:"bad"}, avancado:{t:"BAV avançado", k:"bad"}}[r.bav];
-    res.d = `FC ${fc} bpm.`;
+    res.d = fcTxt();
     return resultado(res);
   }
 
   if (reg === "irregular"){
     B.escolha("pind", {curto:"Ondas P individualizadas", titulo:"Você identifica ondas P individualizadas?", opcoes:SN});
     if (!r.pind) return falta();
-    return resultado(r.pind === "nao" ? {t:"Padrão compatível com fibrilação atrial", d:`Ritmo irregular, sem ondas P individualizadas, FC ${fc} bpm.`, k:"warn"}
+    return resultado(r.pind === "nao" ? {t:"Padrão compatível com fibrilação atrial", d:fcFim("Ritmo irregular, sem ondas P individualizadas"), k:"warn"}
       : {t:"Ritmo irregular com atividade atrial identificável", d:"Considere extrassístoles atriais frequentes ou atividade atrial multifocal.", k:"warn"});
   }
   B.escolha("pns", {curto:"Ondas P não sinusais", titulo:"Você identifica ondas P não sinusais?", opcoes:[["sim","Sim"],["nao","Não"]]});
   if (!r.pns) return falta();
-  if (r.pns === "sim") return resultado({t:"Considerar ritmo atrial ectópico", d:`FC ${fc} bpm.`, k:"warn"});
+  if (r.pns === "sim") return resultado({t:"Considerar ritmo atrial ectópico", d:fcTxt(), k:"warn"});
   if (!perguntaQRS()) return falta();
-  return resultado(r.qrs === "estreito" ? {t:"Considerar ritmo juncional", d:`QRS estreito, FC ${fc} bpm.`, k:"warn"}
-    : {t:"Considerar ritmo idioventricular", d:`QRS largo, FC ${fc} bpm.`, k:"warn"});
+  return resultado(r.qrs === "estreito" ? {t:"Considerar ritmo juncional", d:fcFim("QRS estreito"), k:"warn"}
+    : {t:"Considerar ritmo idioventricular", d:fcFim("QRS largo"), k:"warn"});
 }
 
 const PADROES = [["wellens","Padrão de Wellens"],["dewinter","Padrão de de Winter"],["aslanger","Padrão de Aslanger"],["avr","Infra difuso de ST + supra em aVR"],["hiper","Ondas T hiperagudas"]];
@@ -279,7 +287,10 @@ function isquemia(){
 /* Etapa 8: QRS. A largura pode já ter vindo da etapa 6; o eixo, da etapa 5. O app não pergunta de novo. */
 const larguraQRS = () => R().qrs || R().qrs8 || null;
 const num = k => { const v = parseFloat(String(R()[k] ?? "").replace(",", ".")); return isFinite(v) ? v : null; };
-const abreSgarbossa = () => larguraQRS() === "largo" && R().v1 === "bre" && (S.cur.motivo === "dor" || (R().isq || []).includes("supra"));
+/* Dor torácica entre as queixas: no modo plantão o médico pode somar queixas em qualquer ordem, e o mesmo paciente
+   tem de receber a mesma conduta (decisão do orquestrador, 25/09). Fora do plantão é a queixa da etapa 1, como sempre. */
+const comDor = () => S.cur.motivo === "dor" || !!(S.cur.plantao && (S.cur.plantao.queixas || []).includes("dor"));
+const abreSgarbossa = () => larguraQRS() === "largo" && R().v1 === "bre" && (comDor() || (R().isq || []).includes("supra"));
 function sgarbossa(){
   if (!abreSgarbossa()) return null;
   const r = R(), st = num("sgST"), s = num("sgS");
@@ -406,7 +417,7 @@ function proximoPasso(){
     "Na presença de quadro clínico compatível, priorize estratégia de reperfusão sem atraso.",
     "Avalie imediatamente a possibilidade de intervenção coronária percutânea e, quando ela não puder ser realizada em tempo adequado, a elegibilidade para fibrinólise, conforme protocolo assistencial.",
     "Não retarde a estratégia de reperfusão aguardando exames que não sejam necessários para a decisão inicial."]});
-  else if (S.cur.motivo === "dor") out.push({t:"Dor torácica sem supra / padrão de oclusão identificado", p:[
+  else if (comDor()) out.push({t:"Dor torácica sem supra / padrão de oclusão identificado", p:[
     "O ECG inicial sem supradesnivelamento de ST não exclui síndrome coronariana aguda.",
     "Se a história clínica mantiver suspeita de SCA, considere ECGs seriados, dosagem seriada de troponina e estratificação de risco, conforme o contexto clínico.",
     "Reavalie imediatamente se houver recorrência ou mudança dos sintomas."]});
@@ -782,7 +793,7 @@ function saudacao(){
   const h = new Date().getHours();
   const p = h < 5 ? "Boa madrugada" : h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
   const n = (S.prefs.nome || "").trim();
-  return n ? `${p}, ${n}.` : `${p}, doutor.`;
+  return n ? `${p}, ${n}.` : `${p}.`;   // sem nome, sem gênero presumido (Júlia, 25/09)
 }
 function mesmoDia(a, b){ const x = new Date(a), y = new Date(b); return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate(); }
 function mapaDias(){
@@ -842,10 +853,11 @@ function inicio(){
     <button class="icobtn" type="button" data-aba="config" aria-label="Configurações">${I.config}</button></div>
   <div class="scroll stagger com-nav">
     <div><h1>${saudacao()}</h1><p class="mute" style="margin-top:4px">Vamos interpretar um ECG?</p></div>
-    ${and ? `<div class="card grad glow cont"><span class="eyebrow">Leitura em andamento</span><strong>${mAnd ? mAnd.nome : "Leitura"}</strong>
-      <p class="tiny">Etapa ${and.passo} de ${ULTIMO} · ${PASSOS[and.passo]} · ${haQuanto(and.salvoEm)}</p>
+    ${and ? `<div class="card grad glow cont"><span class="eyebrow">Leitura em andamento</span><strong>${and.plantao && window.ModoPlantao ? and.plantao.queixas.map(q => ModoPlantao.CURTO[q]).join(" + ") : mAnd ? mAnd.nome : "Leitura"}</strong>
+      <p class="tiny">${and.plantao && and.plantao.tela !== "completa" ? "Modo plantão" : `Etapa ${and.passo} de ${ULTIMO} · ${PASSOS[and.passo]}`} · ${haQuanto(and.salvoEm)}</p>
       <div class="row2"><button class="btn" type="button" data-descartar="1">Descartar</button><button class="btn primary" type="button" data-continuar="1">Continuar</button></div></div>` : ""}
-    <button class="btn ${and ? "" : "primary "}big wide" type="button" data-ir="motivo">${I.ecg}Ler um eletro agora</button>
+    ${window.ModoPlantao ? ModoPlantao.cartaoInicio() : ""}
+    <button class="btn ${and || window.ModoPlantao ? "" : "primary "}big wide" type="button" data-ir="motivo">${I.ecg}Ler um eletro agora</button>
     <div class="row2"><button class="btn" type="button" data-atalho="fc">Calcular FC</button><button class="btn" type="button" data-atalho="qtc">Calcular QTc</button></div>
     ${monitorHTML()}
     <div class="sec"><h3>Suas leituras</h3>${n ? `<button class="textbtn" type="button" data-aba="biblioteca">Ver todas ${I.seta}</button>` : ""}</div>
@@ -1115,15 +1127,17 @@ function telaMotivo(){
     <div class="tiles">${MOTIVOS.map((x, i) => `<button type="button" class="tile" data-motivo="${x.k}" aria-pressed="${S.cur.motivo === x.k}"><span class="ix">${dois(i + 1)}</span><strong>${x.nome}</strong></button>`).join("")}</div>
     ${m ? `<div class="orient" id="orient"><span class="eyebrow">Antes de olhar o traçado</span>${m.texto.map(t => `<p>${t}</p>`).join("")}</div>` : `<p class="tiny mute">A depender do motivo, o Copiloto mostra o que não pode passar naquele contexto.</p>`}
   </div>
-  <div class="foot">${pilula()}<button class="btn primary" type="button" data-ir="foto" ${m ? "" : "disabled"}>Iniciar leitura ${I.seta}</button></div></div>`;
+  <div class="foot">${m ? linha1HTML() : pilula()}<button class="btn primary" type="button" data-ir="foto" ${m ? "" : "disabled"}>Iniciar leitura ${I.seta}</button></div></div>`;
 }
 
 /* ---------- foto (opcional) ---------- */
+// de onde se chegou à foto: da etapa (dock), do modo plantão (Leitura completa) ou do motivo
+const voltaFoto = () => S.fotoOrigem === "seq" || S.fotoOrigem === "plantao" ? S.fotoOrigem : "motivo";
 function telaFoto(){
   const c = S.cur;
   if (!c.tela){
     return `<div class="screen">
-    <div class="top"><button class="icobtn ghost" type="button" data-ir="${S.fotoOrigem === "seq" ? "seq" : "motivo"}" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>Quer usar a foto do eletro?</strong></div></div>
+    <div class="top"><button class="icobtn ghost" type="button" data-ir="${voltaFoto()}" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>Quer usar a foto do eletro?</strong></div></div>
     <div class="scroll stagger">
       <p class="small mute">Com a foto, o traçado fica à mão durante toda a leitura e dá para medir com a régua na tela. Sem ela, você lê direto no papel.</p>
       <button class="dropzone" type="button" data-fonte="camera">${I.camera}<strong>Fotografar o eletro</strong><span class="mute tiny">Abre a câmera</span></button>
@@ -1135,7 +1149,7 @@ function telaFoto(){
   }
   const q = c.foto, avisos = avisosFoto(q), ruim = avisos.some(a => a.n === "bad");
   return `<div class="screen">
-  <div class="top"><button class="icobtn ghost" type="button" data-ir="${S.fotoOrigem === "seq" ? "seq" : "motivo"}" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>A foto ficou boa?</strong></div></div>
+  <div class="top"><button class="icobtn ghost" type="button" data-ir="${voltaFoto()}" aria-label="Voltar">${I.voltar}</button><div class="t"><small>Opcional</small><strong>A foto ficou boa?</strong></div></div>
   ${visorHTML("full", "Arraste para mover, pince para aproximar.")}
   <div class="scroll stagger" style="padding-top:12px">
     ${avisos.length ? avisos.map(a => ins(a.n, a.t, a.d)).join("") : ins("ok", "Foto boa", "Nitidez, luz e tamanho estão dentro do esperado.")}
@@ -1221,12 +1235,14 @@ function blocoAtivo(b){
     ${b.titulo ? `<p class="q${b.grande ? "" : " sm"}">${b.titulo}</p>` : ""}${b.dica ? `<p class="tiny mute">${b.dica}</p>` : ""}${b.meio || ""}
     ${corpo}${b.depois || ""}</section>`;
 }
+// resposta dada no modo plantão (e ainda não mudada na etapa): aparece feita, com a etiqueta
+const doPlantao = k => !!(S.cur.plantao && S.cur.plantao.chaves && S.cur.plantao.chaves[k]);
 function renderBlocos(L){
   let ativa = null, h = "";
   L.forEach(b => {
     if (b.t === "texto"){ h += b.html; return; }
     if (!ehPergunta(b)){ if (!ativa) h += b.t === "res" ? ins(b.k, b.titulo, b.d) : b.html; return; }
-    if (feita(b)){ h += `<button type="button" class="qb feita" data-editar="${b.chave}"><span class="ck">${I.check}</span><span class="rot">${b.curto}</span><b>${valorCurto(b)}</b></button>`; return; }
+    if (feita(b)){ const pl = doPlantao(b.chave); h += `<button type="button" class="qb feita${pl ? " do-plantao" : ""}" data-editar="${b.chave}"><span class="ck">${I.check}</span><span class="rot">${b.curto}${pl ? `<span class="tag warn pl">plantão</span>` : ""}</span><b>${valorCurto(b)}</b></button>`; return; }
     if (ativa){ h += `<div class="qb futura"><span class="ck"></span><span class="rot">${b.curto}</span></div>`; return; }
     ativa = b; h += blocoAtivo(b);
   });
@@ -1355,7 +1371,7 @@ const ETAPAS = {
       resumo:() => `${R().fc} bpm${R().reg === "irregular" ? " · média" : ""}`,
       corpo:() => {
         const irregular = r.reg === "irregular", aba = irregular ? "c10" : (S.aberto.calcfcAba || "rr");
-        let h = `<p class="q sm">Qual a frequência cardíaca?${irregular ? ` <span class="tiny mute">frequência média</span>` : ""}</p>
+        let h = `<p class="q sm">Qual a frequência cardíaca?${irregular ? ` <span class="tiny mute">frequência média</span>` : ""}</p>${!r.fc && r.fcFaixa ? `<p class="small ink2 pl-faixa"><span class="tag warn pl">plantão</span> No plantão: ${FAIXA_NOME[r.fcFaixa]} bpm. Confirme o número.</p>` : ""}
           <div class="fc-tracado" data-ctl="tracado-fc"></div><div data-ctl="fc"></div>
           <p class="tiny mute" id="fc-dica"${r.fc ? " hidden" : ""}>Arraste a fita, ou toque no número para digitar.</p>
           ${ajuda("calcfc", "Me ajude a calcular a FC")}`;
@@ -1425,7 +1441,7 @@ const ETAPAS = {
     const LARG = [["estreito","Estreito — menor que 120 ms","Estreito"],["largo","Largo — 120 ms ou mais","Largo"]];
     if (r.qrs){
       B.texto(`<div class="sec"><h3>8.1 — Duração do QRS</h3></div>`);
-      B.res("info", `QRS ${r.qrs} — já registrado na etapa de arritmias`, "O Copiloto usa a informação já armazenada e não pergunta de novo." + (r.qrsMs ? ` Medido na foto: ${r.qrsMs} ms.` : ""));
+      B.res("info", `QRS ${r.qrs} — já registrado ${doPlantao("qrs") ? "no modo plantão" : "na etapa de arritmias"}`, "O Copiloto usa a informação já armazenada e não pergunta de novo." + (r.qrsMs ? ` Medido na foto: ${r.qrsMs} ms.` : ""));
     } else {
       B.escolha("qrs8", {sec:"8.1 — Duração do QRS", curto:"Duração do QRS", titulo:"O QRS é estreito ou largo?", opcoes:LARG,
         depois:ajuda("medirqrs8", "Não sei medir o QRS") + (S.aberto.medirqrs8 ? `<div class="helpbox"><p>Meça do início da primeira deflexão do QRS até o final da última deflexão.</p><p>Em velocidade de 25 mm/s, cada quadradinho corresponde a 40 ms. Portanto, <b>3 quadradinhos = 120 ms</b>.</p>${S.cur.tela ? `<button class="btn small" type="button" data-medir="qrs" data-chave="qrs8">${I.regua}Medir o QRS na foto</button>` : ""}${ref("qrs-inicio-fim", "Imagem mostrando início e final do QRS")}</div>` : "")});
@@ -1549,7 +1565,7 @@ function telaSeq(){
   ${progresso(i)}
   ${dockHTML()}
   <div class="scroll seq stagger" id="seq-scroll"></div>
-  <div class="foot">${pilula()}<button class="btn primary" type="button" id="proxima" disabled>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
+  <div class="foot">${linha1HTML()}<button class="btn primary" type="button" id="proxima" disabled>${i === ULTIMA_PERGUNTA ? "Volte ao paciente" : "Próxima etapa"} ${I.seta}</button></div></div>`;
 }
 /* os controles seguram laços (inércia da fita, repetição do +/−) que gravam medida.
    Trocar o innerHTML por cima deixaria esses laços vivos, gravando depois do Confirmar. */
@@ -1567,7 +1583,7 @@ function desenharMiolo(){
   montarControles(sc);
   const b = document.getElementById("proxima"), estava = !b.disabled;
   b.disabled = !completa; b.classList.toggle("pronta", completa && !estava);
-  desenharTutora();
+  desenharAcomp();
   // a pílula ocupa uma linha do rodapé: decide antes, senão o focar() mede uma área que vai encolher
   atualizarContinua(); focar(); setTimeout(atualizarContinua, 400);
   gravarAndamento(); // o miolo trocado no lugar não passa pelo fim do desenhar()
@@ -1590,7 +1606,8 @@ function focar(){
 function atualizarContinua(){
   const sc = document.getElementById("seq-scroll"), c = document.getElementById("continua"); if (!sc || !c) return;
   const ult = sc.lastElementChild;
-  c.hidden = !ult || ult.getBoundingClientRect().bottom - sc.getBoundingClientRect().bottom <= 24;
+  // com o texto da tutora aberto na faixa, o "continua" sai: o texto é o foco
+  c.hidden = !ult || ult.getBoundingClientRect().bottom - sc.getBoundingClientRect().bottom <= 24 || !!app.querySelector(".foot .acomp-corpo");
   sc.onscroll = atualizarContinua;
   c.onclick = () => sc.scrollBy({top:sc.clientHeight * .8, behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
 }
@@ -1636,7 +1653,7 @@ function resumo(){
     bloco("Arritmias", semArritmia ? "Nenhuma identificada" : a.res.t, a.res.k, a.extra || "");
     if (!semArritmia){ conc.unshift(a.res.t); atencao.push(a.res.t); }
     if (a.extra){ conc.push(a.extra); atencao.push(a.extra); }
-    frases.push(`${a.res.t}, ${r.reg}, com frequência cardíaca de ${r.fc} bpm${e ? " e " + EIXO_FRASE[e.t] : ""}.${a.extra ? " Presença de " + minuscula(a.extra) + "." : ""}`);
+    frases.push(`${a.res.t}, ${r.reg}${r.fc ? `, com frequência cardíaca de ${r.fc} bpm` : ""}${e ? " e " + EIXO_FRASE[e.t] : ""}.${a.extra ? " Presença de " + minuscula(a.extra) + "." : ""}`);
   }
   if (isq.pronto){
     if (isq.achados.length){
@@ -1726,7 +1743,8 @@ function telaLaudo(){
     <div class="sec"><h3>Próximo passo clínico</h3><span class="tiny mute">orientação inicial</span></div>
     <div class="passos" id="proximo-passo"><p class="tiny mute">A partir do que você identificou, lembre-se:</p>
     ${pp.length ? pp.map(c => `<div class="card conduta"><span class="eyebrow">${c.t}</span>${c.p.map(x => `<p class="small ink2">${x}</p>`).join("")}</div>`).join("")
-      : `<div class="card conduta"><span class="eyebrow">Agora volte ao paciente</span><p class="small ink2">Relacione os achados eletrocardiográficos ao quadro clínico, exame físico e demais informações disponíveis.</p><p class="small ink2">O ECG é uma parte do raciocínio clínico e não o raciocínio inteiro.</p></div>`}</div>
+      : `<div class="card conduta"><span class="eyebrow">Agora volte ao paciente</span><p class="small ink2">Relacione os achados eletrocardiográficos ao quadro clínico, exame físico e demais informações disponíveis.</p><p class="small ink2">O ECG é uma parte do raciocínio clínico e não o raciocínio inteiro.</p></div>`}
+    ${S.cur.plantao && S.cur.plantao.sint ? `<p class="tiny mute pl-sint">No modo plantão: sintomas pela bradicardia: ${S.cur.plantao.sint === "tem" ? "tem" : "não tem"}</p>` : ""}</div>
     <div class="sec"><h3>11.1 — Sua interpretação do ECG</h3></div>
     <div class="laudo" id="laudo">${s.texto}${assinatura() ? `<div class="sig">${assinatura().trim()}</div>` : ""}</div>
     <div class="salvo">${S.salvou === false ? `<span class="tag bad salva">Não foi possível salvar neste aparelho</span>` : `<span class="tag ok salva">Salva neste aparelho</span>`}</div>
@@ -1745,6 +1763,7 @@ function telaLaudo(){
 const telaIA = () => S.tela === "inicio" && S.aba === "ia";
 /* a leitura em andamento é a do andamento guardado (a que terminou no laudo já não conta) */
 function leituraIA(){
+  if (S.iaDaEtapa === 1) return null;   // da etapa 1 a leitura nova ainda não virou andamento: não mostra a anterior
   const a = lerAndamento(); if (!a) return null;
   const mem = S.cur.id === a.id && !!S.cur.motivo;
   return {id:a.id, passo:mem ? S.cur.passo : a.passo, motivo:a.motivo, naMemoria:mem};
@@ -1754,7 +1773,7 @@ function comLeitura(fn){
   const a = lerAndamento(); if (!a) return null;
   if (S.cur.id === a.id && S.cur.motivo) return fn();
   const antes = S.cur, antesEd = S.editando, c = nova();
-  Object.assign(c, {id:a.id, quando:a.quando, motivo:a.motivo, passo:a.passo, r:a.r || {}, conf:a.conf || {}, tutoraVista:a.tutoraVista || {}});
+  Object.assign(c, {id:a.id, quando:a.quando, motivo:a.motivo, passo:a.passo, r:a.r || {}, conf:a.conf || {}, tutoraVista:a.tutoraVista || {}, plantao:a.plantao || null});
   S.cur = c; S.editando = null;
   try { return fn(); } finally { S.cur = antes; S.editando = antesEd; }
 }
@@ -1803,6 +1822,8 @@ function contextoIA(){
     const pa = perguntaAtiva(); if (pa) o.pergunta_da_etapa = pa.titulo;
     const al = window.IARegras ? IARegras.avaliar(S.cur) : [];
     if (al.length) o.alertas_tutora = al.map(x => ({id:x.id, titulo:x.titulo}));
+    // vinda do modo plantão: as respostas são as mesmas; vão junto as queixas e o que ficou em "não sei"
+    if (S.iaDoPlantao && S.cur.plantao && window.ModoPlantao){ Object.assign(o, ModoPlantao.contexto()); if (o.modo) delete o.pergunta_da_etapa; }
     return {objeto:o, itens, passo:p};
   }) || {objeto:null, itens:[], passo:null};
 }
@@ -1827,7 +1848,7 @@ function respostasIA(){
 }
 /* abrir a IA de dentro da etapa: sem barra de baixo, voltar leva à mesma etapa */
 function abrirIA(pergunta){
-  S.iaDaEtapa = S.cur.passo; S.editando = null;
+  S.iaDaEtapa = S.tela === "motivo" ? 1 : S.cur.passo; S.iaDoPlantao = false; S.editando = null;
   soltarVisor(); S.tela = "inicio"; S.aba = "ia";
   desenhar(true);
   if (pergunta && window.CopilotoIA) CopilotoIA.enviar(pergunta);
@@ -1853,47 +1874,69 @@ function atualizarRedeEtapa(){
     w.innerHTML = porqueIrHTML(+w.dataset.porqueIr, on);
     ligarIA(w);
   });
-  desenharTutora();   // a assinatura inclui o sinal: só troca a tutora se ele mudou
+  desenharAcomp();   // a assinatura inclui o sinal: só troca a faixa se ele mudou
 }
-/* tutora que discorda: uma linha do rodapé da etapa, acima do Próxima. Uma por vez, a de maior prioridade.
-   Dispensada, não volta nesta leitura; se a regra deixa de valer, some sozinha. Não trava o Próxima. */
-function desenharTutora(){
-  const foot = app.querySelector(".foot"); if (!foot || !window.IARegras) return;
+/* Copiloto IA presente nas etapas 1 a 10 (spec 8): a faixa .acomp é a primeira linha do rodapé, acima do Próxima,
+   ao lado do botão redondo "continua". Acompanhando: um toque abre a IA vinda da etapa (nada é enviado sozinho).
+   Com a tutora levantando algo, vira "1 ponto para conferir": o toque abre o texto ali mesmo (funciona sem sinal),
+   com "Ver com o Copiloto IA" e "Dispensar". Uma por vez, a de maior prioridade; dispensada, não volta nesta
+   leitura; se a regra deixa de valer, some sozinha. Não trava o Próxima. Quem decide é alertasDaEtapa() menos
+   tutoraVista, como antes; só a faixa é trocada (assinatura), o miolo não é redesenhado. */
+function linha1HTML(){
+  return `<div class="linha1"><span class="acomp-vaga"></span><button class="continua" id="continua" type="button" aria-label="Continua abaixo" hidden><span>${I.baixo}<span class="p">continua</span></span></button></div>`;
+}
+function desenharAcomp(){
+  const foot = app.querySelector(".foot"), linha = foot && foot.querySelector(".linha1"); if (!linha) return;
+  const passo = S.tela === "motivo" ? 1 : S.cur.passo;
   const vista = S.cur.tutoraVista || {};
-  const al = IARegras.alertasDaEtapa(S.cur, S.cur.passo).find(a => !vista[a.id]);
-  const velha = foot.querySelector(".tutora");
+  const todas = window.IARegras && passo > 1 ? IARegras.alertasDaEtapa(S.cur, passo) : [];
+  const abertas = todas.filter(a => !vista[a.id]), al = abertas[0];
   const on = Plataforma.online(), k = al ? "tutora-" + al.id : null, ab = !!(k && S.aberto[k]);
-  const assinatura = al ? al.id + "|" + ab + "|" + on + "|" + al.titulo : "";
-  if (velha && velha.dataset.assinatura === assinatura) return;
-  if (!al){ if (velha) velha.remove(); return; }
-  const html = `<div class="tutora${velha && velha.dataset.id === al.id ? "" : " nova"}" role="status" data-id="${al.id}" data-assinatura="${esc(assinatura)}">
-    <div class="corpo"><button type="button" class="abre" data-toggle-tutora="${k}" aria-expanded="${ab}"><small>Antes de seguir</small><span>${al.titulo}</span></button>
-      ${ab ? `<div class="txt" tabindex="0"><p>${al.texto}</p><span class="de">${al.aula}</span></div>` : ""}
-      <button type="button" class="ir" data-tutora-ia="${al.id}" ${on ? "" : "disabled"}>${on ? "Ver com o Copiloto IA" : "Ver com o Copiloto IA · precisa de sinal"} ${I.seta}</button></div>
-    <button type="button" class="fecha" data-tutora-fecha="${al.id}" aria-label="Dispensar o aviso">${I.fechar}</button></div>`;
+  const assinatura = al ? ["ponto", al.id, abertas.length, ab, on, al.titulo].join("|") : ["acomp", on, todas.some(a => vista[a.id])].join("|");
+  const velho = linha.querySelector(".acomp, .acomp-vaga");
+  if (velho && velho.dataset.assinatura === assinatura) return;
+  let html;
+  if (al){
+    const n = abertas.length, nova = !(velho && velho.dataset.id === al.id);
+    html = `<button type="button" class="acomp ponto tutora${nova ? " nova" : ""}" data-toggle-tutora="${k}" data-id="${al.id}" aria-expanded="${ab}" data-assinatura="${esc(assinatura)}">
+      <span class="ic">${I.ia}<i></i></span><span class="t"><small>${n === 1 ? "1 ponto para conferir" : n + " pontos para conferir"}</small><span>${al.titulo}</span></span>${I.seta}</button>`;
+  } else {
+    const txt = !on ? "Sem sinal · os alertas seguem" : todas.some(a => vista[a.id]) ? "Nada novo a apontar" : "Nada a apontar até aqui";
+    html = `<button type="button" class="acomp${on ? "" : " off"}" data-acomp-ia="1" data-assinatura="${esc(assinatura)}" aria-label="Copiloto IA: ${txt}. Abrir o Copiloto com a pergunta desta etapa">
+      <span class="ic">${I.ia}<i></i></span><span class="t"><small>Copiloto IA · acompanhando</small><span>${txt}</span></span>${I.seta}</button>`;
+  }
   const tmp = document.createElement("div"); tmp.innerHTML = html;
   const el = tmp.firstElementChild;
-  if (velha) velha.replaceWith(el); else foot.insertBefore(el, foot.firstChild);
+  if (velho) velho.replaceWith(el); else linha.insertBefore(el, linha.firstChild);
+  const corpoVelho = foot.querySelector(".acomp-corpo"); if (corpoVelho) corpoVelho.remove();
+  if (al && ab){
+    tmp.innerHTML = `<div class="acomp-corpo" role="status" data-id="${al.id}"><div class="txt" tabindex="0"><p>${al.texto}</p><span class="de">${al.aula}</span></div>
+      <div class="acoes"><button class="textbtn" type="button" data-tutora-ia="${al.id}" ${on ? "" : "disabled"}>${I.ia} ${on ? "Ver com o Copiloto IA" : "Ver com o Copiloto · sem sinal"} ${I.seta}</button><button class="textbtn fora" type="button" data-tutora-fecha="${al.id}">Dispensar</button></div></div>`;
+    const corpo = tmp.firstElementChild;
+    linha.after(corpo); ligarIA(corpo);
+  }
   ligarIA(el);
+  atualizarContinua();
 }
 /* etapa 11: tudo o que a tutora levantou na leitura. Sem atalho para a IA (decisão do Matheus), fora do texto copiado */
 function tutoraLaudoHTML(){
   const al = window.IARegras ? IARegras.avaliar(S.cur) : [];
   if (!al.length) return "";
-  return `<div class="sec"><h3>A tutora levantou</h3><span class="tiny mute">confira antes de fechar</span></div>
+  return `<div class="sec"><h3>Alertas do Copiloto</h3><span class="tiny mute">confira antes de fechar</span></div>
     <div class="tutora-lista">${al.map(a => `<div class="ins ${a.nivel === "atencao" ? "warn" : "info"}"><strong>${a.titulo}</strong><p>${a.texto}</p><span class="de">${a.aula}</span></div>`).join("")}</div>`;
 }
 function ligarIA(raiz){
   const q = s => raiz.matches && raiz.matches(s) ? [raiz].concat([...raiz.querySelectorAll(s)]) : [...raiz.querySelectorAll(s)];
   q("[data-ia-porque]").forEach(b => b.onclick = () => abrirIA(window.CopilotoIA ? CopilotoIA.perguntaPorque(+b.dataset.iaPorque) : null));
-  q("[data-toggle-tutora]").forEach(b => b.onclick = () => { const k = b.dataset.toggleTutora; S.aberto[k] = !S.aberto[k]; desenharTutora(); atualizarContinua(); });
+  q("[data-toggle-tutora]").forEach(b => b.onclick = () => { const k = b.dataset.toggleTutora; S.aberto[k] = !S.aberto[k]; desenharAcomp(); atualizarContinua(); });
+  q("[data-acomp-ia]").forEach(b => b.onclick = () => abrirIA(null));
   q("[data-tutora-ia]").forEach(b => b.onclick = () => {
-    const al = IARegras.alertasDaEtapa(S.cur, S.cur.passo).find(a => a.id === b.dataset.tutoraIa);
+    const al = IARegras.alertasDaEtapa(S.cur, S.tela === "motivo" ? 1 : S.cur.passo).find(a => a.id === b.dataset.tutoraIa);
     if (al) abrirIA(al.pergunta_para_ia);
   });
   q("[data-tutora-fecha]").forEach(b => b.onclick = () => {
     S.cur.tutoraVista = Object.assign({}, S.cur.tutoraVista, {[b.dataset.tutoraFecha]:true});
-    gravarAndamento(); desenharTutora(); atualizarContinua();
+    gravarAndamento(); desenharAcomp(); atualizarContinua();
   });
 }
 /* levar a conta de uma calculadora da IA para a etapa: grava a medida, mas quem confirma é o médico na etapa */
@@ -1924,7 +1967,7 @@ function levarIA(tipo, e){
 }
 /* o index.html do cache pode vir sem o ia.js logo depois de uma atualização: sem ele, o resto do app segue */
 if (window.CopilotoIA) CopilotoIA.configurar({
-  I, PASSOS, esc, marca, nav, aviso, ampliar, refHTML, refVisivel, qtDe, refs:REFS,
+  I, PASSOS:Object.assign({1:"Olhe para o paciente"}, PASSOS), esc, marca, nav, aviso, ampliar, refHTML, refVisivel, qtDe, refs:REFS,
   online:() => Plataforma.online(),
   copiar:t => Plataforma.copiar(t),
   daEtapa:() => S.iaDaEtapa || null,
@@ -1935,13 +1978,41 @@ if (window.CopilotoIA) CopilotoIA.configurar({
   medidasLeitura:() => comLeitura(() => { const r = R(); return {sgST:num("sgST"), sgS:num("sgS"), sg1:r.sg1, sg2:r.sg2, qtQuad:num("qtQuad"), fc:r.fc || null, sexo:r.sexo || null}; }) || {},
   podeLevar:podeLevarIA, levar:levarIA,
   redesenhar:() => { if (telaIA()) desenhar(true); },
-  voltarLeitura:() => { S.iaDaEtapa = null; continuarLeitura(); },
+  voltarLeitura:() => {
+    if (S.iaDaEtapa === 1){ S.iaDaEtapa = null; S.tela = "motivo"; desenhar(true); return; }   // etapa 1: a leitura ainda não é andamento
+    S.iaDaEtapa = null; continuarLeitura();   // do plantão, continuarLeitura() volta ao plantão
+  },
+  daPlantao:() => S.iaDoPlantao && S.cur.plantao && window.ModoPlantao ? ModoPlantao.iaInfo() : null,
   novaLeitura:() => { S.iaDaEtapa = null; irPara("motivo"); },
   entrar:() => paraEntrar(),
   semAcesso:() => conferir(true),
   token:async () => { try { const c = Conta.cliente(); const r = c && await c.auth.getSession(); return (r && r.data && r.data.session && r.data.session.access_token) || null; } catch(_){ return null; } },
   // o trecho que sustentou a resposta, lido da base (RLS: só quem tem acesso)
   lerTrecho:async id => { try { const c = Conta.cliente(); if (!c || !c.from) return null; const {data, error} = await c.from("trechos").select("texto").eq("id", id).maybeSingle(); return error || !data ? null : data.texto; } catch(_){ return null; } }
+});
+
+/* ---------- Modo plantão (plantao.js): as funções clínicas são estas, entregues como estão ---------- */
+function comecarPlantao(q){
+  S.cur = nova(); S.cur.motivo = q; S.cur.plantao = ModoPlantao.novo(q);
+  S.vista = null; S.aberto = {}; S.dock = "aberto"; S.fotoOrigem = null; S.editando = null; S.iaDaEtapa = null; S.iaDoPlantao = false;
+  soltarVisor(); S.tela = "plantao"; S.dir = "fwd"; desenhar(true);
+}
+/* Leitura completa: o mesmo S.cur. Foto (opcional) e daí a etapa 2, com R() já preenchido pelo plantão.
+   O que ficou em "não sei" é perguntado de novo na etapa, com a ajuda aberta. */
+function leituraCompleta(){
+  const p = S.cur.plantao; if (!p) return;
+  ModoPlantao.ajudasAbertas().forEach(k => { S.aberto[k] = true; });
+  S.fotoOrigem = "plantao"; S.editando = null; soltarVisor(); S.tela = "foto"; S.dir = "fwd"; desenhar(true);
+}
+function abrirIAPlantao(){
+  S.iaDoPlantao = true; S.iaDaEtapa = null; S.editando = null;
+  soltarVisor(); S.tela = "inicio"; S.aba = "ia"; desenhar(true);
+}
+if (window.ModoPlantao) ModoPlantao.configurar({
+  S, R, I, esc, MOTIVOS, PADROES, TERR, REFS, ampliar, aviso, refHTML, refVisivel, revisao,
+  sinusal, eixo, faixaFC, faixaDe, arritmia, isquemia, larguraQRS, sgarbossa, especiais, tepAchados, simNao, num, proximoPasso,
+  limpar, atualizarWiz, gravarAndamento, desenhar,
+  comecar:comecarPlantao, leituraCompleta, abrirIAPlantao, irInicio:() => irAba("inicio")
 });
 
 /* ---------- desenhar e ligar ---------- */
@@ -1971,13 +2042,35 @@ const RAMO8 = ["v1","sg1","sg2","sgST","sgS","sg3"];
 const DEPENDE = {
   cal:["calSeguir"], elet:["eletSeguir"],
   ritmo:["wiz1"].concat(RAMO6), wiz1:["wiz2"].concat(RAMO6), wiz2:["wiz3"].concat(RAMO6), wiz3:RAMO6,
-  reg:RAMO6.concat(["cq","c10","fc"]), fc:RAMO6, extra:["extraQrs"], qrs:["tq","pind","qrs8","qrsMs"].concat(RAMO8), qrs8:["qrsMs"].concat(RAMO8), v1:["sg1","sg2","sgST","sgS","sg3"],
+  reg:RAMO6.concat(["cq","c10","fc","fcFaixa"]), fc:RAMO6, fcFaixa:RAMO6, extra:["extraQrs"], qrs:["tq","pind","qrs8","qrsMs"].concat(RAMO8), qrs8:["qrsMs"].concat(RAMO8), v1:["sg1","sg2","sgST","sgS","sg3"],
   temP:["rel","bav","qrs"], rel:["bav"], pns:["qrs"],
   di:["dii"], avf:["dii"], supraDist:["terr"], amp8:["svd","sV1","rV56","strainVE","sk"]
 };
-function limpar(k){ (DEPENDE[k] || []).forEach(x => { const tinha = x in R() || x in S.cur.conf; delete R()[x]; delete S.cur.conf[x]; if (tinha) limpar(x); }); }
+/* poupar: chaves que continuam valendo e ficam (com os dependentes delas). O modo plantão responde fora da ordem das
+   etapas: a largura do QRS não depende da FC, do ritmo nem da regularidade, e a faixa da FC não depende da regularidade. */
+function limpar(k, poupar){ (DEPENDE[k] || []).forEach(x => { if (poupar && poupar[x]) return; const tinha = x in R() || x in S.cur.conf; delete R()[x]; delete S.cur.conf[x]; if (tinha) limpar(x, poupar); }); }
+/* responder na etapa: a regra antiga (trocou o valor, limpa os dependentes). Só numa leitura vinda do modo plantão, a
+   primeira resposta de uma chave poupa o que o plantão já respondeu fora da ordem (spec 2.3); o resto limpa como sempre. */
+function limparAoResponder(k, v){
+  const r = R(), p = S.cur.plantao;
+  if (r[k] === v) return;
+  if (k in r || !p) limpar(k); else limpar(k, p.chaves || {});
+}
 // v null: a fita voltou a ficar sem valor (gesto cancelado). Apaga a chave em vez de gravar nulo.
-function definirFC(v){ const a = R().fc == null ? null : R().fc; if (a !== v) limpar("fc"); if (v == null) delete R().fc; else R().fc = v; }
+// Leitura vinda do modo plantão: a etapa 6 foi respondida com a faixa; só a troca de faixa a refaz, e o número
+// apaga a faixa (spec 2.2). Fora do plantão, nada muda.
+function definirFC(v){
+  const r = R(), a = r.fc == null ? null : r.fc, p = S.cur.plantao;
+  if (p){
+    const antes = a != null ? faixaDe(a) : r.fcFaixa || p.faixaRef || null;
+    if (v != null){
+      if (antes && faixaDe(v) !== antes){ limpar("fc"); limpar("fcFaixa"); aviso("A FC mudou de faixa: refaça o descarte de arritmias"); }
+      p.faixaRef = faixaDe(v); delete r.fcFaixa;
+      if (p.chaves) delete p.chaves.fcFaixa;
+    }
+  } else if (a !== v) limpar("fc");
+  if (v == null) delete r.fc; else r.fc = v;
+}
 function atualizarWiz(){
   const r = R();
   if (r.ritmo !== "duvida"){ delete r.wizFim; return; }
@@ -1999,9 +2092,11 @@ function ligarOpts(raiz){
       if (k === "isq"){ if (!arr.includes("supra")){ delete r.terr; delete r.supraDist; delete S.cur.conf.terr; } if (!arr.includes("infra")) delete r.infraV1; if (!arr.includes("nenhuma")){ delete r.padroes; delete S.cur.conf.padroes; } }
       if (k === "esp"){ if (!arr.includes("tep")) delete r.s1q3t3; if (!arr.includes("hiperk")){ delete r.hk1; delete r.hk2; } if (!arr.includes("hipok")){ delete r.hpk1; delete r.hpk2; } }
     } else {
-      if (r[k] !== v) limpar(k);
+      // trocou o valor: apaga os dependentes (numa leitura vinda do plantão, a primeira resposta poupa o que o plantão marcou)
+      limparAoResponder(k, v);
       r[k] = v; delete S.cur.conf[k]; S.editando = null;
     }
+    if (S.cur.plantao && S.cur.plantao.chaves) delete S.cur.plantao.chaves[k];   // mudou na etapa: deixa de ser "do plantão"
     atualizarWiz();
     manterRolagem(desenhar);
     const novo = app.querySelector(`[data-ans="${k}"][data-val="${v}"]`); if (novo) novo.classList.add("pop");
@@ -2048,7 +2143,7 @@ function irPara(t){
 }
 function irAba(a){
   soltarVisor();
-  S.tela = "inicio"; S.aba = a; S.confirmaApagar = false; S.conta.saindo = null; S.editando = null; S.iaDaEtapa = null;
+  S.tela = "inicio"; S.aba = a; S.confirmaApagar = false; S.conta.saindo = null; S.editando = null; S.iaDaEtapa = null; S.iaDoPlantao = false;
   desenhar(true);
 }
 function escalonar(){
@@ -2063,10 +2158,12 @@ function desenhar(inteira){
     return;
   }
   const telas = { inicio:() => ({inicio, biblioteca, guia, config, ia:window.CopilotoIA ? () => CopilotoIA.tela() : null}[S.aba] || inicio)(),
-    motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo,
+    motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo, plantao:() => ModoPlantao.tela(),
     entrar:telaEntrar, codigo:telaCodigo, encerrado:telaEncerrado };
   soltarVisor(); // a tela inteira é refeita: o visor que ficaria órfão levaria o S.vista junto no próximo resize
   soltarControles(app);
+  if (S.tela === "plantao" && !(S.cur.plantao && window.ModoPlantao)) S.tela = "inicio";
+  if (S.cur.plantao && (S.tela === "plantao" || S.tela === "seq")) S.cur.plantao.tela = S.tela === "seq" ? "completa" : "plantao";
   app.innerHTML = (telas[S.tela] || telas.inicio)();
   animarNumeros(); montarMonitor();
   ligar(app);
@@ -2078,6 +2175,8 @@ function desenhar(inteira){
   if (S.tela === "medir") ligarMedir();
   if (S.tela === "seq") desenharMiolo(); // o miolo nasce vazio na casca
   if (S.tela === "codigo") montarCodigo();
+  if (S.tela === "plantao") ModoPlantao.montar(app);
+  if (S.tela === "motivo") desenharAcomp();
   if (telaIA() && window.CopilotoIA) CopilotoIA.montar(app);
   // atalho do início: a calculadora pedida encosta no topo. A conta é de layout (offsetTop), porque a
   // entrada escalonada ainda está deslocando o cartão e o scrollIntoView pararia uns 12 px acima.
@@ -2085,7 +2184,7 @@ function desenhar(inteira){
   escalonar();
   atualizarContinua(); setTimeout(atualizarContinua, 400);
   // a tela cheia aberta pelo laudo é leitura terminada: gravar andamento aqui a ressuscitaria no início
-  if (["foto", "seq", "medir", "ver"].includes(S.tela) && !(S.tela === "ver" && S.verVolta === "laudo")) gravarAndamento();
+  if (["foto", "seq", "medir", "ver", "plantao"].includes(S.tela) && !(S.tela === "ver" && S.verVolta === "laudo")) gravarAndamento();
   travarTela(emLeitura());
 }
 /* liga os eventos de uma raiz: a tela inteira (app) ou só o miolo redesenhado.
@@ -2099,7 +2198,11 @@ function ligar(raiz){
   });
   raiz.querySelectorAll("[data-fonte]").forEach(b => b.onclick = () => pedirFoto(b.dataset.fonte));
   raiz.querySelectorAll("[data-continuar]").forEach(b => b.onclick = () => continuarLeitura());
-  raiz.querySelectorAll("[data-descartar]").forEach(b => b.onclick = () => { descartarAndamento(); S.cur = nova(); desenhar(true); });
+  raiz.querySelectorAll("[data-descartar]").forEach(b => b.onclick = () => {
+    const a = lerAndamento();
+    if (a && window.CopilotoIA && CopilotoIA.leituraAcabou) CopilotoIA.leituraAcabou(a.id);   // a conversa era desse paciente
+    descartarAndamento(); S.cur = nova(); desenhar(true);
+  });
   raiz.querySelectorAll("[data-instalar]").forEach(b => b.onclick = () => { const e = S.instalar; if (!e) return; S.instalar = null; try { e.prompt(); } catch(_){} });
   // atalho do início: abre o Guia já nas calculadoras, com a calculadora pedida no topo (quem rola é o desenhar)
   raiz.querySelectorAll("[data-atalho]").forEach(b => b.onclick = () => { S.guiaAba = "calc"; S.guiaFoco = b.dataset.atalho; irAba("guia"); });
@@ -2120,7 +2223,7 @@ function ligar(raiz){
   raiz.querySelectorAll("[data-voltar]").forEach(b => b.onclick = () => {
     if (S.tela === "laudo"){ S.tela = "seq"; S.cur.passo = ULTIMA_PERGUNTA; }
     else if (S.cur.passo > 2){ S.cur.passo--; S.dir = "back"; }
-    else { S.fotoOrigem = null; S.tela = "foto"; }   // senão o voltar da tela de foto devolvia para a etapa, e a volta ficava presa
+    else { S.fotoOrigem = S.cur.plantao ? "plantao" : null; S.tela = "foto"; }   // senão o voltar da tela de foto devolvia para a etapa, e a volta ficava presa
     S.editando = null; soltarVisor(); desenhar(true);
   });
   raiz.querySelectorAll("[data-abrir]").forEach(b => b.onclick = () => {
@@ -2166,6 +2269,7 @@ function ligar(raiz){
   ligarOpts(raiz);
   ligarConta(raiz);
   ligarIA(raiz);
+  if (window.ModoPlantao) ModoPlantao.ligarInicio(raiz);
   // etapa 4: trocar de método na ajuda da FC (régua no papel · contar em 10 s · medir na foto)
   raiz.querySelectorAll("[data-fcaba]").forEach(b => b.onclick = () => { S.aberto.calcfcAba = b.dataset.fcaba; manterRolagem(desenhar); });
 
@@ -2231,7 +2335,7 @@ function ligarMedir(){
       R().qtQuad = Math.round(ms / MS_POR_MM * 10) / 10; S.cur.conf.qtQuad = true; S.editando = null; S.aberto.medirqt = false; aviso("QT " + ms + " ms");
     } else {
       const v = ms >= 120 ? "largo" : "estreito", chave = S.medir.chave || "qrs";
-      if (R()[chave] !== v) limpar(chave);
+      limparAoResponder(chave, v);
       R()[chave] = v; R().qrsMs = ms; S.editando = null; S.aberto.medirqrs = false; S.aberto.medirqrs8 = false; aviso("QRS " + ms + " ms · " + v);
     }
     soltarVisor(); S.tela = "seq"; desenhar();
@@ -2444,7 +2548,7 @@ inputArquivo.addEventListener("change", async () => {
   } catch(_){ aviso("Não consegui abrir essa imagem"); }
 });
 
-window.__copiloto = {S, R, nova, arritmia, isquemia, qt, resumo, proximoPasso, desenhar, sincronizar, contextoIA, abrirIA};
+window.__copiloto = {S, R, nova, arritmia, isquemia, sgarbossa, especiais, faixaFC, qt, resumo, proximoPasso, desenhar, sincronizar, contextoIA, abrirIA, definirFC, limpar};
 
 // a primeira tela sai na hora, da sessão guardada no aparelho; a rede só confirma depois
 const {sessao} = Conta.guardada();
@@ -2459,6 +2563,7 @@ if (sessao){
 Plataforma.aoMudarRede(on => {
   if (on){ conferir(true); if (Conta.email()) Sync.enviar(); }
   if (S.tela === "seq") atualizarRedeEtapa();   // o "Aprofundar" e o link da tutora dependem de sinal
+  if (S.tela === "motivo") desenharAcomp();
 });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferir(false); });
 })();
