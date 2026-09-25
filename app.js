@@ -44,7 +44,7 @@ function nova(){
   return { id:"L" + Date.now(), quando:Date.now(), motivo:null,
     tela:null, foto:null, blob:null, thumb:null, escala:null, calQuadrados:5,
     pontos:{cal:null, fc:null, qrs:null, qt:null},
-    passo:2, r:{}, conf:{} };
+    passo:2, r:{}, conf:{}, tutoraVista:{} };
 }
 const S = {
   tela:"inicio", aba:"inicio", cur:nova(), leituras:lerJSON(CHAVE, []), editando:null,
@@ -69,7 +69,7 @@ function gravarAndamento(){
   // foto, a foto da anterior ficaria órfã no banco.
   const a = lerJSON(CHAVE_AND, null);
   if (a && a.id !== c.id && !c.tela) apagarFoto(FOTO_AND);
-  gravarJSON(CHAVE_AND, {id:c.id, quando:c.quando, motivo:c.motivo, passo:c.passo, r:c.r, conf:c.conf, escala:c.escala, calQuadrados:c.calQuadrados, pontos:c.pontos, foto:c.foto, temFoto:!!c.tela, dock:S.dock, salvoEm:Date.now()});
+  gravarJSON(CHAVE_AND, {id:c.id, quando:c.quando, motivo:c.motivo, passo:c.passo, r:c.r, conf:c.conf, escala:c.escala, calQuadrados:c.calQuadrados, pontos:c.pontos, foto:c.foto, temFoto:!!c.tela, dock:S.dock, tutoraVista:c.tutoraVista || {}, salvoEm:Date.now()});
 }
 function lerAndamento(){
   const a = lerJSON(CHAVE_AND, null); if (!a) return null;
@@ -81,7 +81,7 @@ async function continuarLeitura(){
   const a = lerAndamento(); if (!a) return;
   if (!(S.cur.id === a.id && S.cur.motivo)){                 // ainda na memória: é só voltar para a etapa
     const c = nova();
-    Object.assign(c, {id:a.id, quando:a.quando, motivo:a.motivo, passo:a.passo, r:a.r || {}, conf:a.conf || {}, escala:a.escala || null, calQuadrados:a.calQuadrados || 5, pontos:a.pontos || c.pontos, foto:a.foto || null});
+    Object.assign(c, {id:a.id, quando:a.quando, motivo:a.motivo, passo:a.passo, r:a.r || {}, conf:a.conf || {}, escala:a.escala || null, calQuadrados:a.calQuadrados || 5, pontos:a.pontos || c.pontos, foto:a.foto || null, tutoraVista:a.tutoraVista || {}});
     if (a.temFoto){
       const blob = await lerFoto(FOTO_AND) || await lerFoto(a.id);
       if (blob){ try { c.tela = await prepararFoto(blob); c.blob = blob; if (!c.foto) c.foto = analisarQualidade(c.tela); } catch(_){} }
@@ -89,7 +89,7 @@ async function continuarLeitura(){
     }
     S.cur = c; S.dock = a.dock || "aberto"; S.vista = null; S.aberto = {};
   }
-  S.editando = null; S.tela = "seq"; desenhar(true);
+  S.editando = null; S.iaDaEtapa = null; S.tela = "seq"; desenhar(true);
 }
 /* a tela não pode apagar no meio da leitura; fora dela, o aparelho volta ao normal */
 const emLeitura = () => ["motivo", "foto", "seq", "medir", "ver", "laudo"].includes(S.tela);
@@ -323,10 +323,14 @@ function etapa8Pronta(){
 
 /* Etapa 9: QT medido em quadradinhos; QTc por Bazett com a FC da etapa 4. */
 function qt(){
-  const r = R(), q = num("qtQuad"), fc = r.fc;
-  if (q === null || q <= 0 || !fc || !r.sexo) return null;
+  const r = R();
+  return r.sexo ? qtDe(num("qtQuad"), r.fc, r.sexo) : null;
+}
+/* a conta do QTc, também usada pela calculadora do Copiloto IA (sem sexo: sai o número, sem a classe) */
+function qtDe(q, fc, sexo){
+  if (q == null || q <= 0 || !fc) return null;
   const qtMs = Math.round(q * MS_POR_MM), qtc = Math.round(qtMs / Math.sqrt(60 / fc));
-  const longo = r.sexo === "m" ? qtc > 450 : qtc >= 460, curto = qtc < 350;
+  const longo = sexo === "m" ? qtc > 450 : sexo === "f" ? qtc >= 460 : false, curto = qtc < 350;
   return {qtMs, qtc, longo, curto, classe:longo ? "prolongado" : curto ? "curto" : "normal"};
 }
 
@@ -682,7 +686,17 @@ const I = {
   expandir:svg('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
   recolher:svg('<path d="M6 15l6-6 6 6"/>'),
   guia:svg('<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 18.5A2.5 2.5 0 0 1 6.5 16H20"/><path d="M9 8h7M9 11.5h5"/>'),
-  vazio:svg('<path d="M3 12h3l2-5 3 10 3-8 2 3h5"/><path d="M4 19h16" stroke-dasharray="2 3"/>')
+  vazio:svg('<path d="M3 12h3l2-5 3 10 3-8 2 3h5"/><path d="M4 19h16" stroke-dasharray="2 3"/>'),
+  // Copiloto IA (design-aba.md): balão com um batimento, e os ícones da conversa
+  ia:svg('<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 3.5V17A2.5 2.5 0 0 1 4 14.5z"/><path d="M7 10.5h2.2l1.3-2.8 2 5.4 1.3-2.6H17"/>'),
+  enviar:svg('<path d="M12 19V5M6 11l6-6 6 6"/>'),
+  parar:svg('<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>'),
+  nova:svg('<path d="M12 20h8"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
+  semSinal:svg('<path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1"/><path d="M3 3l18 18"/>'),
+  relogio:svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  erro:svg('<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.5" r=".6" fill="currentColor"/>'),
+  pergunta:svg('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .9-1 1.6v.4"/><circle cx="12" cy="17" r=".6" fill="currentColor"/>'),
+  grupo:svg('<circle cx="9" cy="9" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 6.5a3 3 0 0 1 0 5.5M17.5 19a5.5 5.5 0 0 0-2.5-4.6"/>')
 };
 const marca = () => `<span class="mark"><svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 3 11 2.5-7 1.5 2H20"/></svg></span>`;
 function opt(chave, valor, rotulo, multi){
@@ -806,6 +820,7 @@ function nav(){
   return `<nav class="nav">
     ${itens.map(([k,l,ic]) => `<button type="button" data-aba="${k}" ${S.aba===k?'aria-current="page"':""}>${ic}${l}</button>`).join("")}
     <button type="button" class="plus" data-ir="motivo">${I.mais}Nova leitura</button>
+    ${window.CopilotoIA ? `<button type="button" data-aba="ia" ${S.aba==="ia"?'aria-current="page"':""}>${I.ia}Copiloto IA</button>` : ""}
     <button type="button" data-aba="guia" ${S.aba==="guia"?'aria-current="page"':""}>${I.guia}Guia</button>
   </nav>`;
 }
@@ -1546,12 +1561,13 @@ function desenharMiolo(){
   const sc = document.getElementById("seq-scroll"), v = ETAPAS[S.cur.passo](), rb = renderBlocos(v.blocos), completa = v.ok() && !rb.temAtiva;
   const topoR = sc.scrollTop;
   soltarControles(sc);
-  sc.innerHTML = rb.html;
+  sc.innerHTML = porqueHTML(S.cur.passo) + rb.html;
   sc.scrollTop = topoR; // o miolo é trocado no lugar: devolve a rolagem antes de o focar() ajustar
   ligar(sc);
   montarControles(sc);
   const b = document.getElementById("proxima"), estava = !b.disabled;
   b.disabled = !completa; b.classList.toggle("pronta", completa && !estava);
+  desenharTutora();
   // a pílula ocupa uma linha do rodapé: decide antes, senão o focar() mede uma área que vai encolher
   atualizarContinua(); focar(); setTimeout(atualizarContinua, 400);
   gravarAndamento(); // o miolo trocado no lugar não passa pelo fim do desenhar()
@@ -1586,7 +1602,7 @@ window.addEventListener("resize", atualizarContinua);
   if (el) el.addEventListener("scroll", () => { el.scrollTop = 0; el.scrollLeft = 0; });
 });
 document.addEventListener("focusout", e => {
-  if (e.target && e.target.matches && e.target.matches(".ctl-inp, #p-nome, #busca")) window.scrollTo(0, 0);
+  if (e.target && e.target.matches && e.target.matches(".ctl-inp, #p-nome, #busca, #ia-txt")) window.scrollTo(0, 0);
 });
 
 /* ---------- etapa 11: volte ao paciente ---------- */
@@ -1706,6 +1722,7 @@ function telaLaudo(){
   <div class="scroll seq stagger" id="seq-scroll">
     ${m ? `<div class="orient"><span class="eyebrow">Contexto informado · ${m.curto}</span><p>${m.texto[0]}</p></div>` : ""}
     ${s.atencao.length ? ins("bad", s.atencao.length === 1 ? "1 ponto de atenção" : s.atencao.length + " pontos de atenção", s.atencao.join(" · "), "pontos") : ins("ok", "Nenhum ponto de atenção nas etapas avaliadas", "", "pontos")}
+    ${tutoraLaudoHTML()}
     <div class="sec"><h3>Próximo passo clínico</h3><span class="tiny mute">orientação inicial</span></div>
     <div class="passos" id="proximo-passo"><p class="tiny mute">A partir do que você identificou, lembre-se:</p>
     ${pp.length ? pp.map(c => `<div class="card conduta"><span class="eyebrow">${c.t}</span>${c.p.map(x => `<p class="small ink2">${x}</p>`).join("")}</div>`).join("")
@@ -1721,6 +1738,211 @@ function telaLaudo(){
   </div>
   <div class="foot">${pilula()}<button class="btn" type="button" data-ir="motivo">Novo ECG</button><button class="btn primary" type="button" data-copiar="1">${I.copiar}Copiar interpretação</button></div></div>`;
 }
+
+/* ---------- Copiloto IA (24/09/2026) ----------
+   A tela é do ia.js; aqui ficam as pontes com a leitura: o resumo mandado à função, a tutora no rodapé
+   da etapa, o "Por que isso importa?" e levar a conta de uma calculadora de volta para a etapa. */
+const telaIA = () => S.tela === "inicio" && S.aba === "ia";
+/* a leitura em andamento é a do andamento guardado (a que terminou no laudo já não conta) */
+function leituraIA(){
+  const a = lerAndamento(); if (!a) return null;
+  const mem = S.cur.id === a.id && !!S.cur.motivo;
+  return {id:a.id, passo:mem ? S.cur.passo : a.passo, motivo:a.motivo, naMemoria:mem};
+}
+/* roda fn com S.cur = a leitura em andamento, mesmo que ela ainda não tenha sido reaberta (app reaberto no plantão) */
+function comLeitura(fn){
+  const a = lerAndamento(); if (!a) return null;
+  if (S.cur.id === a.id && S.cur.motivo) return fn();
+  const antes = S.cur, antesEd = S.editando, c = nova();
+  Object.assign(c, {id:a.id, quando:a.quando, motivo:a.motivo, passo:a.passo, r:a.r || {}, conf:a.conf || {}, tutoraVista:a.tutoraVista || {}});
+  S.cur = c; S.editando = null;
+  try { return fn(); } finally { S.cur = antes; S.editando = antesEd; }
+}
+/* a pergunta em aberto na etapa (a que o pedido proibido devolve) */
+function perguntaAtiva(){
+  const p = S.cur.passo; if (!ETAPAS[p]) return null;
+  const b = ETAPAS[p]().blocos.find(x => ehPergunta(x) && !feita(x));
+  return b ? {titulo:b.titulo || b.curto, dica:b.dica || ""} : null;
+}
+/* resumo da leitura para o campo "contexto" da função: só o que o médico respondeu e mediu. Nunca a foto,
+   nem o id da leitura. itens: a linha curta do chip "Estou vendo sua leitura". */
+function contextoIA(){
+  return comLeitura(() => {
+    const r = R(), m = motivo(), p = S.cur.passo, e = eixo(), a = arritmia(), q = qt(), sin = sinusal(), larg = larguraQRS(), sg = sgarbossa();
+    const o = {queixa:m ? m.nome : null, etapa:p, etapa_nome:PASSOS[p]}, itens = [], medidas = {};
+    if (m) itens.push(m.curto.toLowerCase());
+    if (r.fc){ medidas.fc = r.fc; itens.push(`FC ${r.fc} bpm`); }
+    if (r.reg) o.regularidade = r.reg;
+    if (sin !== null) o.ritmo = sin ? "sinusal" : "não sinusal";
+    if (a.pronto){ o.arritmia = a.res.t; if (a.extra) o.batimentos_diferentes = a.extra; }
+    if (sin === false) itens.push(a.pronto ? minuscula(a.res.t) : "ritmo não sinusal");
+    else if (a.pronto && a.res.k !== "ok") itens.push(minuscula(a.res.t));
+    if (e){ o.eixo = e.t; if (e.k !== "ok") itens.push(minuscula(e.t)); }
+    if (larg){ o.qrs = larg; itens.push("QRS " + larg); if (r.qrsMs) medidas.qrs_ms = r.qrsMs; }
+    if (larg === "largo" && r.v1){
+      o.bloqueio_de_ramo = {bre:"BRE", brd:"BRD", duvida:"sem padrão típico definido"}[r.v1];
+      if (r.v1 !== "duvida") itens.push(o.bloqueio_de_ramo + " em V1");
+    }
+    const mk = r.isq || [];
+    if (mk.length){
+      const isq = isquemia();
+      o.isquemia = isq.pronto ? (isq.achados.length ? isq.achados : ["nenhum padrão isquêmico marcado"])
+        : mk.map(k => ({supra:"supra de ST", infra:"infra de ST", tinv:"T invertida simétrica", nenhuma:"nenhuma alteração em derivações contíguas"}[k]));
+      mk.filter(k => k !== "nenhuma").forEach(k => itens.push({supra:"supra", infra:"infra", tinv:"T invertida"}[k] + " na etapa 7"));
+      (r.padroes || []).filter(x => x !== "nenhum").forEach(x => itens.push(minuscula(PADROES.find(y => y[0] === x)[1])));
+    }
+    if (sg){
+      o.sgarbossa = {supra_concordante:r.sg1 || null, infra_v1_v3:r.sg2 || null, razao_supra_s:sg.razao !== null ? Math.round(sg.razao * 100) / 100 : null, criterio_presente:sg.pronto ? sg.positivo : null};
+      if (sg.pronto) itens.push(sg.positivo ? "Sgarbossa presente" : "Sgarbossa ausente");
+    }
+    if (r.sexo) o.sexo = r.sexo === "m" ? "masculino" : "feminino";
+    if (q){ medidas.qt_ms = q.qtMs; medidas.qtc_ms = q.qtc; o.qtc = q.classe; itens.push(`QTc ${q.qtc} ms`); }
+    if ((r.esp || []).length) o.suspeita_clinica = r.esp.map(k => (ESPECIAIS.find(x => x[0] === k) || [k, "nenhuma"])[1]);
+    Object.assign(o, respostasIA());
+    if (Object.keys(medidas).length) o.medidas = medidas;
+    const pa = perguntaAtiva(); if (pa) o.pergunta_da_etapa = pa.titulo;
+    const al = window.IARegras ? IARegras.avaliar(S.cur) : [];
+    if (al.length) o.alertas_tutora = al.map(x => ({id:x.id, titulo:x.titulo}));
+    return {objeto:o, itens, passo:p};
+  }) || {objeto:null, itens:[], passo:null};
+}
+/* as respostas por trás da arritmia (6), da isquemia (7) e dos padrões especiais (10), com o rótulo da pergunta
+   e o texto do botão. Só as perguntas que a etapa mostra hoje: resposta de um ramo abandonado não vai. */
+const RESPOSTAS_IA = ["tq","pind","temP","rel","bav","pns","supraDist","infraV1","hk1","hk2","hpk1","hpk2","s1q3t3"];
+function respostasIA(){
+  const r = R(), respostas = {}, out = {};
+  const rotulo = (b, v) => { const op = (b.opcoes || []).find(x => x[0] === v); return op ? op[1] : v; };
+  [6, 7, 10].forEach(n => {
+    let bl = [];
+    try { bl = ETAPAS[n]().blocos; } catch(_){ return; }
+    bl.forEach(b => {
+      const v = r[b.chave];
+      if (b.t === "escolha" && RESPOSTAS_IA.includes(b.chave) && v != null) respostas[b.curto] = rotulo(b, v);
+      if (b.t === "multi" && b.chave === "terr" && (v || []).length) out.territorio_supra = v.map(k => rotulo(b, k));
+      if (b.t === "multi" && b.chave === "padroes" && (v || []).length) out.padroes_alto_risco = v.map(k => k === "nenhum" ? "nenhum" : (PADROES.find(x => x[0] === k) || [k, k])[1]);
+    });
+  });
+  if (Object.keys(respostas).length) out.respostas = respostas;
+  return out;
+}
+/* abrir a IA de dentro da etapa: sem barra de baixo, voltar leva à mesma etapa */
+function abrirIA(pergunta){
+  S.iaDaEtapa = S.cur.passo; S.editando = null;
+  soltarVisor(); S.tela = "inicio"; S.aba = "ia";
+  desenhar(true);
+  if (pergunta && window.CopilotoIA) CopilotoIA.enviar(pergunta);
+}
+/* "Por que isso importa?": primeira linha do miolo das etapas 2 a 10; funciona sem sinal */
+function porqueHTML(p){
+  const P = window.IARegras && IARegras.PORQUE[p]; if (!P || p > ULTIMA_PERGUNTA) return "";
+  const k = "porque-" + p, ab = !!S.aberto[k], on = Plataforma.online();
+  return `<button class="porque" type="button" data-toggle="${k}" aria-expanded="${ab}">${I.pergunta}Por que isso importa?</button>`
+    + (ab ? `<div class="helpbox porque-box"><p>${P.texto}</p><span class="de">${P.aula}</span>
+      <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" data-porque-ir="${p}">${porqueIrHTML(p, on)}</span></div>` : "");
+}
+function porqueIrHTML(p, on){
+  return `<button class="textbtn" type="button" data-ia-porque="${p}" ${on ? "" : "disabled"}>${I.ia} Aprofundar com o Copiloto IA ${I.seta}</button>${on ? "" : `<span class="off">precisa de sinal</span>`}`;
+}
+/* sinal caiu ou voltou no meio da etapa: troca só o que depende de rede. Redesenhar o miolo
+   soltaria a régua/fita no meio do arrasto e o focar() pularia a tela. */
+function atualizarRedeEtapa(){
+  const on = Plataforma.online();
+  document.querySelectorAll("#seq-scroll [data-porque-ir]").forEach(w => {
+    const b = w.querySelector("[data-ia-porque]");
+    if (b && b.disabled === !on) return;
+    w.innerHTML = porqueIrHTML(+w.dataset.porqueIr, on);
+    ligarIA(w);
+  });
+  desenharTutora();   // a assinatura inclui o sinal: só troca a tutora se ele mudou
+}
+/* tutora que discorda: uma linha do rodapé da etapa, acima do Próxima. Uma por vez, a de maior prioridade.
+   Dispensada, não volta nesta leitura; se a regra deixa de valer, some sozinha. Não trava o Próxima. */
+function desenharTutora(){
+  const foot = app.querySelector(".foot"); if (!foot || !window.IARegras) return;
+  const vista = S.cur.tutoraVista || {};
+  const al = IARegras.alertasDaEtapa(S.cur, S.cur.passo).find(a => !vista[a.id]);
+  const velha = foot.querySelector(".tutora");
+  const on = Plataforma.online(), k = al ? "tutora-" + al.id : null, ab = !!(k && S.aberto[k]);
+  const assinatura = al ? al.id + "|" + ab + "|" + on + "|" + al.titulo : "";
+  if (velha && velha.dataset.assinatura === assinatura) return;
+  if (!al){ if (velha) velha.remove(); return; }
+  const html = `<div class="tutora${velha && velha.dataset.id === al.id ? "" : " nova"}" role="status" data-id="${al.id}" data-assinatura="${esc(assinatura)}">
+    <div class="corpo"><button type="button" class="abre" data-toggle-tutora="${k}" aria-expanded="${ab}"><small>Antes de seguir</small><span>${al.titulo}</span></button>
+      ${ab ? `<div class="txt" tabindex="0"><p>${al.texto}</p><span class="de">${al.aula}</span></div>` : ""}
+      <button type="button" class="ir" data-tutora-ia="${al.id}" ${on ? "" : "disabled"}>${on ? "Ver com o Copiloto IA" : "Ver com o Copiloto IA · precisa de sinal"} ${I.seta}</button></div>
+    <button type="button" class="fecha" data-tutora-fecha="${al.id}" aria-label="Dispensar o aviso">${I.fechar}</button></div>`;
+  const tmp = document.createElement("div"); tmp.innerHTML = html;
+  const el = tmp.firstElementChild;
+  if (velha) velha.replaceWith(el); else foot.insertBefore(el, foot.firstChild);
+  ligarIA(el);
+}
+/* etapa 11: tudo o que a tutora levantou na leitura. Sem atalho para a IA (decisão do Matheus), fora do texto copiado */
+function tutoraLaudoHTML(){
+  const al = window.IARegras ? IARegras.avaliar(S.cur) : [];
+  if (!al.length) return "";
+  return `<div class="sec"><h3>A tutora levantou</h3><span class="tiny mute">confira antes de fechar</span></div>
+    <div class="tutora-lista">${al.map(a => `<div class="ins ${a.nivel === "atencao" ? "warn" : "info"}"><strong>${a.titulo}</strong><p>${a.texto}</p><span class="de">${a.aula}</span></div>`).join("")}</div>`;
+}
+function ligarIA(raiz){
+  const q = s => raiz.matches && raiz.matches(s) ? [raiz].concat([...raiz.querySelectorAll(s)]) : [...raiz.querySelectorAll(s)];
+  q("[data-ia-porque]").forEach(b => b.onclick = () => abrirIA(window.CopilotoIA ? CopilotoIA.perguntaPorque(+b.dataset.iaPorque) : null));
+  q("[data-toggle-tutora]").forEach(b => b.onclick = () => { const k = b.dataset.toggleTutora; S.aberto[k] = !S.aberto[k]; desenharTutora(); atualizarContinua(); });
+  q("[data-tutora-ia]").forEach(b => b.onclick = () => {
+    const al = IARegras.alertasDaEtapa(S.cur, S.cur.passo).find(a => a.id === b.dataset.tutoraIa);
+    if (al) abrirIA(al.pergunta_para_ia);
+  });
+  q("[data-tutora-fecha]").forEach(b => b.onclick = () => {
+    S.cur.tutoraVista = Object.assign({}, S.cur.tutoraVista, {[b.dataset.tutoraFecha]:true});
+    gravarAndamento(); desenharTutora(); atualizarContinua();
+  });
+}
+/* levar a conta de uma calculadora da IA para a etapa: grava a medida, mas quem confirma é o médico na etapa */
+function podeLevarIA(tipo){
+  const L = leituraIA(); if (!L || !L.naMemoria) return null;
+  if (tipo === "sgarbossa") return abreSgarbossa() ? 8 : null;
+  if (tipo === "qtc") return 9;
+  if (tipo === "fc") return R().reg ? 4 : null;
+  return null;
+}
+function levarIA(tipo, e){
+  const n = podeLevarIA(tipo); if (!n) return null;
+  const r = R();
+  if (tipo === "sgarbossa"){
+    if (e.supra == null || !e.s) return "Meça o supra e a S antes";
+    r.sgST = e.supra; r.sgS = e.s; delete S.cur.conf.sg3;
+  } else if (tipo === "qtc"){
+    if (!e.qt) return "Meça o QT antes";
+    r.qtQuad = e.qt; delete S.cur.conf.qtQuad;
+    if (e.sexo && !r.sexo) r.sexo = e.sexo;
+  } else if (tipo === "fc"){
+    const fc = e.ult === "c10" ? Math.round((e.c10 || 0) * 6) : e.rr ? Math.round(1500 / e.rr) : null;
+    if (!(fc >= 10 && fc <= 350)) return "Meça a FC antes";
+    definirFC(fc); delete S.cur.conf.fc;
+  }
+  gravarAndamento();
+  return {sgarbossa:"Supra ÷ S levado para a etapa 8", qtc:"QT levado para a etapa 9", fc:"FC levada para a etapa 4"}[tipo];
+}
+/* o index.html do cache pode vir sem o ia.js logo depois de uma atualização: sem ele, o resto do app segue */
+if (window.CopilotoIA) CopilotoIA.configurar({
+  I, PASSOS, esc, marca, nav, aviso, ampliar, refHTML, refVisivel, qtDe, refs:REFS,
+  online:() => Plataforma.online(),
+  copiar:t => Plataforma.copiar(t),
+  daEtapa:() => S.iaDaEtapa || null,
+  leitura:leituraIA,
+  contexto:contextoIA,
+  perguntaAtiva:() => comLeitura(perguntaAtiva),
+  qrsLargo:() => !!comLeitura(() => larguraQRS() === "largo"),
+  medidasLeitura:() => comLeitura(() => { const r = R(); return {sgST:num("sgST"), sgS:num("sgS"), sg1:r.sg1, sg2:r.sg2, qtQuad:num("qtQuad"), fc:r.fc || null, sexo:r.sexo || null}; }) || {},
+  podeLevar:podeLevarIA, levar:levarIA,
+  redesenhar:() => { if (telaIA()) desenhar(true); },
+  voltarLeitura:() => { S.iaDaEtapa = null; continuarLeitura(); },
+  novaLeitura:() => { S.iaDaEtapa = null; irPara("motivo"); },
+  entrar:() => paraEntrar(),
+  semAcesso:() => conferir(true),
+  token:async () => { try { const c = Conta.cliente(); const r = c && await c.auth.getSession(); return (r && r.data && r.data.session && r.data.session.access_token) || null; } catch(_){ return null; } },
+  // o trecho que sustentou a resposta, lido da base (RLS: só quem tem acesso)
+  lerTrecho:async id => { try { const c = Conta.cliente(); if (!c || !c.from) return null; const {data, error} = await c.from("trechos").select("texto").eq("id", id).maybeSingle(); return error || !data ? null : data.texto; } catch(_){ return null; } }
+});
 
 /* ---------- desenhar e ligar ---------- */
 function aviso(msg){
@@ -1826,7 +2048,7 @@ function irPara(t){
 }
 function irAba(a){
   soltarVisor();
-  S.tela = "inicio"; S.aba = a; S.confirmaApagar = false; S.conta.saindo = null; S.editando = null;
+  S.tela = "inicio"; S.aba = a; S.confirmaApagar = false; S.conta.saindo = null; S.editando = null; S.iaDaEtapa = null;
   desenhar(true);
 }
 function escalonar(){
@@ -1840,7 +2062,7 @@ function desenhar(inteira){
     desenharMiolo();
     return;
   }
-  const telas = { inicio:() => ({inicio, biblioteca, guia, config}[S.aba] || inicio)(),
+  const telas = { inicio:() => ({inicio, biblioteca, guia, config, ia:window.CopilotoIA ? () => CopilotoIA.tela() : null}[S.aba] || inicio)(),
     motivo:telaMotivo, foto:telaFoto, seq:telaSeq, medir:telaMedir, ver:telaVer, detalhe, laudo:telaLaudo,
     entrar:telaEntrar, codigo:telaCodigo, encerrado:telaEncerrado };
   soltarVisor(); // a tela inteira é refeita: o visor que ficaria órfão levaria o S.vista junto no próximo resize
@@ -1856,6 +2078,7 @@ function desenhar(inteira){
   if (S.tela === "medir") ligarMedir();
   if (S.tela === "seq") desenharMiolo(); // o miolo nasce vazio na casca
   if (S.tela === "codigo") montarCodigo();
+  if (telaIA() && window.CopilotoIA) CopilotoIA.montar(app);
   // atalho do início: a calculadora pedida encosta no topo. A conta é de layout (offsetTop), porque a
   // entrada escalonada ainda está deslocando o cartão e o scrollIntoView pararia uns 12 px acima.
   if (S.guiaFoco){ const c = document.getElementById("calc-" + S.guiaFoco); if (c) c.parentNode.scrollTop = c.offsetTop - c.parentNode.offsetTop; S.guiaFoco = null; }
@@ -1942,6 +2165,7 @@ function ligar(raiz){
   };
   ligarOpts(raiz);
   ligarConta(raiz);
+  ligarIA(raiz);
   // etapa 4: trocar de método na ajuda da FC (régua no papel · contar em 10 s · medir na foto)
   raiz.querySelectorAll("[data-fcaba]").forEach(b => b.onclick = () => { S.aberto.calcfcAba = b.dataset.fcaba; manterRolagem(desenhar); });
 
@@ -2053,6 +2277,7 @@ function ligarConta(raiz){
 async function limparAparelho(){
   await Sync.limparLocal();
   soltarVisor(); travarTela(false);
+  if (window.CopilotoIA) CopilotoIA.esquecer();   // a conversa da IA não fica para a próxima pessoa
   S.leituras = []; S.cur = nova(); S.detalhe = null; S.vista = null; S.aberto = {};
   S.prefs = Object.assign({nome:"", assinatura:true, tema:"escuro", revisao:false}, lerJSON(CHAVE_PREFS, {}));
 }
@@ -2174,6 +2399,7 @@ async function sincronizar(){
   if (!mudou) return;
   if (S.tela === "detalhe" && S.detalhe && !ficam.has(S.detalhe.id)){ S.tela = "inicio"; S.aba = "biblioteca"; }
   if (S.tela !== "inicio" && S.tela !== "detalhe") return;   // no meio de uma leitura, a lista nova espera a próxima tela
+  if (telaIA()) return;                                         // a conversa da IA não depende da lista
   // redesenha sem perder a rolagem nem o aviso que estiver na tela ("Pronto, você entrou")
   const sc = app.querySelector(".scroll"), topo = sc ? sc.scrollTop : 0, avisos = [...app.querySelectorAll(".toast")];
   desenhar();
@@ -2218,7 +2444,7 @@ inputArquivo.addEventListener("change", async () => {
   } catch(_){ aviso("Não consegui abrir essa imagem"); }
 });
 
-window.__copiloto = {S, R, nova, arritmia, isquemia, qt, resumo, proximoPasso, desenhar, sincronizar};
+window.__copiloto = {S, R, nova, arritmia, isquemia, qt, resumo, proximoPasso, desenhar, sincronizar, contextoIA, abrirIA};
 
 // a primeira tela sai na hora, da sessão guardada no aparelho; a rede só confirma depois
 const {sessao} = Conta.guardada();
@@ -2230,6 +2456,9 @@ if (sessao){
   conferir(true);
   sincronizar();
 }
-Plataforma.aoMudarRede(on => { if (on){ conferir(true); if (Conta.email()) Sync.enviar(); } });
+Plataforma.aoMudarRede(on => {
+  if (on){ conferir(true); if (Conta.email()) Sync.enviar(); }
+  if (S.tela === "seq") atualizarRedeEtapa();   // o "Aprofundar" e o link da tutora dependem de sinal
+});
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferir(false); });
 })();

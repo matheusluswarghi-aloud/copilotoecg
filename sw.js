@@ -1,8 +1,8 @@
 /* Copiloto de ECG — service worker.
    Rede primeiro, com limite de 3 s; o cache é a reserva para plantão sem sinal.
    Assim, com internet, a versão nova aparece na hora. */
-const VERSAO = "copiloto-v8.1";
-const CASCA = ["./", "index.html", "style.css", "controles.css", "app.js", "controles.js", "referencias.js", "plataforma.js",
+const VERSAO = "copiloto-v9";
+const CASCA = ["./", "index.html", "style.css", "controles.css", "ia.css", "app.js", "controles.js", "ia-regras.js", "ia.js", "referencias.js", "plataforma.js",
   "config.js", "conta-falsa.js", "conta.js", "sync.js", "vendor/supabase.js", "fontes/fontes.css",
   "fontes/Geist-300.woff2", "fontes/Geist-400.woff2", "fontes/Geist-500.woff2", "fontes/Geist-600.woff2",
   "fontes/GeistMono-400.woff2", "fontes/GeistMono-500.woff2", "manifest.webmanifest",
@@ -23,7 +23,7 @@ self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.hostname.endsWith(".supabase.co")) return;  // sessão e sincronização nunca passam pelo cache
+  if (url.hostname.endsWith(".supabase.co")) return;  // sessão, sincronização e a função da IA nunca passam pelo cache
   if (url.origin !== location.origin) return;
   e.respondWith((async () => {
     const c = await caches.open(VERSAO);

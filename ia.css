@@ -1,0 +1,212 @@
+/* Copiloto de ECG — aba "Copiloto IA", tutora e "Por que isso importa?" (24/09/2026)
+   Base: o CSS do protótipo aprovado (prototipo/copiloto-ia.html), copiado quase como está.
+   Só tokens de style.css: a IA não ganha cor própria. */
+/* ---------- barra de baixo: 5 itens (vai para style.css ou ia.css) ---------- */
+.nav{grid-template-columns:repeat(5,1fr)}
+.nav button{min-width:0;white-space:nowrap}
+@media (max-width:352px){.nav button{font-size:.58rem;letter-spacing:0;padding-inline:0}}
+
+/* ---------- tela da IA ---------- */
+.ia-rolo{gap:18px;padding-bottom:20px}
+.ia-intro{display:flex;flex-direction:column;gap:8px;padding:6px 2px 0}
+.ia-intro p{font-size:.95rem;line-height:1.5}
+.ia-sugs{display:flex;flex-direction:column;gap:8px}
+.ia-sug{appearance:none;display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:52px;text-align:left;
+  border-radius:16px;padding:12px 14px;font-size:.95rem;line-height:1.3;color:var(--ink);cursor:pointer;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi);
+  transition:transform .18s var(--spring),background .2s}
+.ia-sug svg{width:16px;height:16px;flex:none;color:var(--mute)}
+.ia-sug:active{transform:scale(.985);background:var(--glass-3)}
+.ia-sug[disabled]{opacity:.45;cursor:not-allowed}
+
+/* conversa: pergunta do médico em balão à direita; resposta SEM balão, largura toda, como nota de preceptor */
+.ia-turno{display:flex;flex-direction:column;gap:14px}
+.ia-eu{align-self:flex-end;max-width:86%;border-radius:20px 20px 6px 20px;padding:11px 15px;font-size:.98rem;line-height:1.4;color:var(--ink);
+  background:var(--glass-3);border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi);animation:rise .3s var(--ease) both;overflow-wrap:anywhere}
+.ia-resp{display:flex;flex-direction:column;gap:12px;min-width:0}
+.ia-quem{display:flex;align-items:center;gap:8px}
+.ia-quem .mark{width:22px;height:22px;border-radius:7px}
+.ia-quem .mark svg{width:15px;height:15px}
+.ia-txt{font-size:1rem;line-height:1.55;color:var(--ink);display:flex;flex-direction:column;gap:10px}
+.ia-txt ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.ia-txt b,.ia-txt strong{font-weight:600}
+.ia-bloco{animation:rise .35s var(--ease) both}
+/* cursor do streaming: o mesmo traço piscando do campo de código de login */
+.ia-cursor::after{content:"";display:inline-block;width:2px;height:1.05em;margin-left:2px;vertical-align:-.15em;background:var(--ink);animation:blink 1s steps(1) infinite}
+
+/* "pensando": uma linha de monitor com um batimento correndo. É a linguagem do app (monitor vivo), não brilho de IA */
+.ia-pensando{display:flex;align-items:center;gap:10px;color:var(--mute);font-size:.88rem;min-height:28px}
+.ia-pensando svg{width:64px;height:18px;flex:none}
+.ia-pensando path{stroke:var(--ink-2);stroke-width:1.6;fill:none;stroke-dasharray:14 120;animation:varre 1.3s linear infinite}
+@keyframes varre{from{stroke-dashoffset:134}to{stroke-dashoffset:0}}
+
+/* primeira linha de gravidade: ação imediata antes de tudo (regra 5) */
+.ia-agora{border-radius:16px;padding:13px 15px;background:var(--g-pulso);color:#fff;display:flex;flex-direction:column;gap:4px;border:1px solid rgba(255,255,255,.18)}
+.ia-agora .ix{font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.72)}
+.ia-agora strong{font-weight:600;font-size:1.06rem;line-height:1.3}
+
+/* cartão 1 · citação da aula: toca e abre o trecho usado */
+.ia-fonte{border-radius:14px;overflow:hidden;background:var(--glass);border:1px solid var(--edge)}
+.ia-fonte>button{appearance:none;width:100%;min-height:48px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;
+  padding:9px 12px;border:0;background:transparent;text-align:left;cursor:pointer;color:var(--ink)}
+.ia-fonte .n{font-family:var(--mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);
+  border:1px solid var(--edge-2);border-radius:8px;padding:4px 7px;white-space:nowrap}
+.ia-fonte .t{min-width:0}
+.ia-fonte .t strong{display:block;font-weight:500;font-size:.9rem;line-height:1.25}
+.ia-fonte .t span{display:block;font-size:.74rem;color:var(--mute);margin-top:1px}
+.ia-fonte>button svg{width:15px;height:15px;color:var(--mute);transition:transform .25s var(--spring)}
+.ia-fonte>button[aria-expanded="true"] svg{transform:rotate(90deg)}
+.ia-trecho{margin:0 12px 12px;padding:2px 0 2px 12px;border-left:2px solid var(--edge-2);font-size:.86rem;line-height:1.5;color:var(--ink-2)}
+.ia-trecho small{display:block;margin-top:6px;font-size:.72rem;color:var(--mute)}
+
+/* cartão 2 · referência: uma imagem, ou duas lado a lado ("parece, mas não é") */
+.ia-ref{display:flex;flex-direction:column;gap:10px}
+.ia-par{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ia-par .ref-img{height:150px}
+.ia-par .ref-img img{width:100%;height:100%;object-fit:cover;object-position:center}
+.ia-par figcaption b{display:block;color:var(--ink);font-weight:500;font-size:.84rem;margin-bottom:2px}
+.ia-lado{display:flex;gap:6px;align-items:center;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+
+/* cartão 3 · calculadora: a conta é do app */
+.ia-calc .linha{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--edge)}
+.ia-calc .linha:first-of-type{border-top:0}
+.ia-calc .linha label{font-size:.9rem;color:var(--ink-2)}
+.ia-passos{display:flex;align-items:center;gap:6px}
+.ia-passos button{appearance:none;width:44px;height:44px;border-radius:var(--r-sm);font-size:1.3rem;line-height:1;color:var(--ink);cursor:pointer;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi);transition:transform .18s var(--spring)}
+.ia-passos button:active{transform:scale(.92)}
+.ia-passos output{min-width:62px;text-align:center;font-variant-numeric:tabular-nums;font-size:1.05rem}
+.ia-passos output small{font-size:.72rem;color:var(--mute);margin-left:2px}
+.ia-calc .res{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-top:6px;border-top:1px solid var(--edge)}
+.ia-calc .num{font-size:2.4rem}
+
+/* o brilho do vidro (.card::before) é posicionado e pinta por cima do texto no tema claro: o conteúdo sobe um andar */
+.ia-calc>*,.ia-clube>*,.ia-etapa>*,.ia-convite>*{position:relative}
+
+/* cartão 4 · Clube do Plantonista: ponte, não anúncio */
+.ia-clube{border-left:2px solid var(--edge-2)}
+.ia-clube p{font-size:.9rem;color:var(--ink-2);line-height:1.45}
+
+/* cartão 5 · pergunta proibida: devolve a pergunta da etapa */
+.ia-etapa .q{font-size:1.02rem}
+
+/* avisos de estado (sem sinal, limite, erro) */
+.ia-aviso{border-radius:var(--r);padding:16px;display:flex;gap:12px;align-items:flex-start;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi)}
+.ia-aviso>svg{width:22px;height:22px;flex:none;color:var(--ink-2);margin-top:1px}
+.ia-aviso div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ia-aviso strong{font-weight:500;font-size:1rem;line-height:1.3}
+.ia-aviso p{font-size:.9rem;color:var(--ink-2);line-height:1.45}
+.ia-aviso .btn{align-self:flex-start;margin-top:4px}
+
+/* ---------- pé: contexto + campo. Fica em fluxo (não flutua), acima da barra de baixo ---------- */
+.ia-pe{flex:none;display:flex;flex-direction:column;gap:8px;padding:6px 14px calc(92px + env(safe-area-inset-bottom));
+  background:linear-gradient(to top,var(--bg) 78%,transparent)}
+.ia.sem-nav .ia-pe,.ia.teclado .ia-pe{padding-bottom:max(10px,env(safe-area-inset-bottom))}
+.ia.teclado .nav{display:none}
+.ia-ctx{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;min-height:52px;padding:4px 4px 4px 12px;border-radius:16px;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hi)}
+.ia-ctx>svg{width:18px;height:18px;color:var(--teal)}
+.ia-ctx .t{min-width:0}
+.ia-ctx .t small{display:block;font-family:var(--mono);font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.ia-ctx .t span{display:block;font-size:.86rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.ia-ctx .icobtn{width:44px;height:44px}
+.ia-ctx.fora{grid-template-columns:1fr auto;min-height:44px;background:transparent;border:1px dashed var(--edge-2);box-shadow:none}
+.ia-ctx.fora span{font-size:.84rem;color:var(--mute)}
+.ia-campo{display:flex;align-items:flex-end;gap:8px;padding:5px 5px 5px 16px;border-radius:26px;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge-2);box-shadow:inset 0 1px 0 var(--hi),0 18px 40px -30px rgba(0,0,0,.9);
+  transition:border-color .2s,box-shadow .25s}
+.ia-campo:focus-within{border-color:rgba(255,255,255,.34)}
+:root[data-theme="light"] .ia-campo:focus-within{border-color:rgba(0,0,0,.28)}
+/* 16px: abaixo disso o Safari do iPhone dá zoom ao focar o campo */
+.ia-campo textarea{flex:1;min-width:0;appearance:none;border:0;background:transparent;color:var(--ink);font:400 16px/1.4 var(--sans);resize:none;outline:none;
+  padding:12px 0;max-height:124px;min-height:46px}
+.ia-campo textarea:disabled{color:var(--mute)}
+.ia-enviar{appearance:none;flex:none;width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+  background:linear-gradient(180deg,#FFFFFF,#E6E6EC);color:#111;border:1px solid #fff;box-shadow:inset 0 1px 0 #fff,0 10px 26px -14px rgba(255,255,255,.55);
+  transition:transform .18s var(--spring),opacity .2s}
+.ia-enviar svg{width:22px;height:22px;stroke-width:2.2}
+.ia-enviar:active{transform:scale(.9)}
+.ia-enviar[disabled]{opacity:.28;cursor:not-allowed}
+:root[data-theme="light"] .ia-enviar{background:linear-gradient(180deg,#1A1A1F,#0B0B0E);color:#fff;border-color:#000;box-shadow:0 10px 26px -14px rgba(0,0,0,.6)}
+.ia-restam{font-size:.76rem;color:var(--mute);text-align:center;font-variant-numeric:tabular-nums}
+
+/* ---------- dentro da leitura ---------- */
+/* "Por que isso importa?": mesmo desenho do .help, na primeira linha da etapa */
+.porque{appearance:none;border:0;background:transparent;color:var(--ink-2);font-size:.88rem;cursor:pointer;min-height:44px;padding:0;
+  display:inline-flex;align-items:center;gap:7px;align-self:flex-start}
+.porque svg{width:17px;height:17px;color:var(--mute)}
+.porque[aria-expanded="true"]{color:var(--ink)}
+.porque-box p{font-size:.92rem;line-height:1.5;color:var(--ink-2)}
+.porque-box .de{font-family:var(--mono);font-size:.64rem;letter-spacing:.06em;color:var(--mute)}
+/* tutora que discorda: uma linha do rodapé, acima do botão. Barra roxa = a mesma "atenção" do .orient e da conduta */
+.tutora{order:-2;flex-basis:100%;display:grid;grid-template-columns:1fr auto;align-items:stretch;border-radius:16px;overflow:hidden;
+  background:linear-gradient(140deg,var(--glass-2),var(--glass));border:1px solid var(--edge);border-left:2px solid var(--violet);box-shadow:inset 0 1px 0 var(--hi);
+  animation:rise .35s var(--ease) both}
+.tutora>button{appearance:none;border:0;background:transparent;color:var(--ink);cursor:pointer;text-align:left}
+.tutora .abre{display:flex;flex-direction:column;gap:2px;padding:9px 6px 9px 13px;min-height:56px;justify-content:center}
+.tutora .abre small{font-family:var(--mono);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--violet)}
+.tutora .abre span{font-size:.88rem;line-height:1.3}
+.tutora .abre em{font-style:normal;font-size:.8rem;color:var(--ink-2);display:inline-flex;align-items:center;gap:4px;margin-top:2px}
+.tutora .abre em svg{width:13px;height:13px}
+.tutora .fecha{width:44px;display:flex;align-items:center;justify-content:center;color:var(--mute)}
+.tutora .fecha svg{width:16px;height:16px}
+.tutora.nova{animation:rise .35s var(--ease) both,chama 1.2s .4s var(--ease) 1}
+@keyframes chama{0%{box-shadow:inset 0 1px 0 var(--hi),0 0 0 0 rgba(164,124,255,.45)}100%{box-shadow:inset 0 1px 0 var(--hi),0 0 0 12px rgba(164,124,255,0)}}
+
+
+/* ---------- acréscimos da montagem ---------- */
+.ia .top .t strong{font-size:1.12rem}
+.ia-sim{flex:none}
+.ia-cita{color:var(--ink-2);font-size:.92em}
+.ia-txt p{margin:0}
+.ia-nota{font-size:.84rem;color:var(--mute)}
+.ia-ref .ref{margin:0}
+.ia-ctx .textbtn{color:var(--ink);padding-right:10px}
+.ia-clube .textbtn{align-self:flex-start;color:var(--ink)}
+.ia-calc .res .num .u{font-size:.9rem;color:var(--mute);margin-left:4px}
+.ia-passos .ia-val{appearance:none;min-width:62px;min-height:44px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:1.05rem;text-align:center;
+  font-variant-numeric:tabular-nums;cursor:text;border-radius:var(--r-sm)}
+.ia-passos .ia-val small{font-size:.72rem;color:var(--mute);margin-left:2px}
+.ia-passos .ia-val input{width:64px;font:inherit;text-align:center;background:var(--glass);color:var(--ink);border:1px solid var(--edge-2);border-radius:10px;padding:6px}
+.ia-sexo{display:flex;gap:6px}
+.ia-sexo .chip{min-height:44px}
+.ia-calc .kv{font-size:.88rem}
+.ia-limite{margin-bottom:0}
+/* tutora: o título abre o texto do aviso (funciona sem sinal); o link manda a pergunta para a IA */
+.tutora .corpo button{appearance:none;border:0;background:transparent;color:var(--ink);cursor:pointer;text-align:left;font:inherit}
+.tutora .corpo{display:flex;flex-direction:column;min-width:0;padding:4px 4px 6px 13px}
+.tutora .abre{padding:6px 2px 2px;min-height:44px}
+/* aberto, o texto rola por dentro: a tutora não pode espremer a pergunta ativa da etapa */
+.tutora .txt{display:flex;flex-direction:column;gap:6px;padding:2px 6px 4px 2px;max-height:min(16vh,5.8em);overflow-y:auto;overscroll-behavior:contain;
+  -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 14px),transparent)}
+.tutora .txt:focus-visible{outline:2px solid var(--edge-2);outline-offset:2px;border-radius:6px}
+.tutora .txt p{font-size:.86rem;line-height:1.45;color:var(--ink-2)}
+.tutora .de{font-family:var(--mono);font-size:.62rem;letter-spacing:.04em;color:var(--mute)}
+.tutora .ir{appearance:none;border:0;background:transparent;color:var(--ink-2);cursor:pointer;font-size:.8rem;min-height:44px;padding:0 2px;
+  display:inline-flex;align-items:center;gap:4px;align-self:flex-start}
+.tutora .ir svg{width:13px;height:13px}
+.tutora .ir[disabled]{opacity:.5;cursor:not-allowed}
+.porque-box{display:flex;flex-direction:column;gap:8px}
+.porque-box .textbtn{align-self:flex-start;color:var(--ink)}
+.porque-box .textbtn[disabled]{opacity:.45;cursor:not-allowed}
+.porque-box .off{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+/* etapa 11: o que a tutora levantou na leitura (sem atalho para a IA) */
+.tutora-lista{display:flex;flex-direction:column;gap:8px}
+.tutora-lista .de{font-family:var(--mono);font-size:.62rem;letter-spacing:.04em;color:var(--mute);margin-top:4px}
+
+/* ---------- correções do teste de 24/09 ---------- */
+/* vindo da etapa: o subtítulo curto ("Etapa 8 · QRS") quebra em duas linhas se não couber, em vez de cortar */
+.ia .top .t small{white-space:normal;overflow:visible}
+/* calculadora de QTc dentro da resposta: o número que abre o teclado é alvo de toque de 44 px */
+.ia-calc .ctl-num{min-height:44px;align-items:center}
+/* teclado aberto: o pé encolhe para sobrar conversa (em 320×568 ele ocupava quase a tela toda) */
+.ia.teclado .ia-pe{gap:6px;padding-top:4px}
+.ia.teclado .ia-restam{display:none}
+.ia.teclado .ia-ctx{min-height:44px;padding:0 0 0 12px;gap:8px;border-radius:14px}
+.ia.teclado .ia-ctx .t span{display:none}
+.ia-ctx-l{font-style:normal}
+.ia.teclado .ia-ctx .t small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ia.teclado .ia-ctx-l{display:none}
+.ia.teclado .ia-ctx>svg{width:15px;height:15px}
+.ia.teclado .ia-campo textarea{max-height:84px}
