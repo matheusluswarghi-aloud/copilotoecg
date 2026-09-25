@@ -83,12 +83,21 @@ function ajudaHTML(k, fechavel, jaNaTela){
 }
 
 /* ---------- estado ---------- */
-function novoPlantao(q){ return {queixas:[q], ns:{}, ajuda:{}, isqA:{}, sint:null, anc:{}, aberto:{}, ultimo:null, somar:false, chaves:{}, tela:"plantao", faixaRef:null, em:Date.now()}; }
+function novoPlantao(q){ return {queixas:[q], ns:{}, ajuda:{}, ajudaRec:{}, isqA:{}, sint:null, anc:{}, aberto:{}, ultimo:null, somar:false, chaves:{}, tela:"plantao", faixaRef:null, em:Date.now()}; }
 // que ajudas moram abaixo de cada item (fc e eixo abrem pelo link, dentro do próprio item)
 const AJUDA_DE = {qrs:["qrs","v1"], arr:["temP","rel","bav","tq","pind","pns"], tep:["s1q3t3"], fc:[], eixo:[], ritmo:[]};
 const itens = () => [...new Set(P().queixas.flatMap(q => LISTA[q] || []))];
 const temItem = id => itens().includes(id);
 const marcar = (...ks) => ks.forEach(k => { P().chaves[k] = 1; });
+/* ajuste fino (25/09, validação final): a ajuda do "não sei" não some enquanto o médico decide; com a resposta definitiva
+   (Tem / Não tem / É este / Estreito / Largo), recolhe para a linha "Ver ajuda de novo" (Júlia v1 nº 8: "na linha recolhida,
+   deixar um ver de novo") e o resultado sobe para a tela. Nas perguntas de várias marcas (a parede do supra), recolhe quando
+   ele passa a outro item. ajudaRec = as ajudas recolhidas que ainda têm o "ver de novo". */
+const rec = () => P().ajudaRec || (P().ajudaRec = {});
+function recolherAjuda(k){ const p = P(); if (p.ajuda[k]){ delete p.ajuda[k]; rec()[k] = true; } if (k === "pad") delete p.padVer; }
+function esquecerAjuda(k){ delete P().ajuda[k]; delete rec()[k]; }
+/* tocou outro item: as ajudas dos itens já respondidos recolhem (fc e eixo abrem pelo link do próprio item e ficam como estão) */
+function recolherOutros(item){ itens().filter(id => id !== item && respondido(id)).forEach(id => (AJUDA_DE[id] || [id]).forEach(recolherAjuda)); }
 
 /* supra / infra / T invertida: a etapa 7 pergunta um multi ("isq") mais as perguntas de cada um.
    O plantão pergunta cada um em separado e compõe o MESMO isq; infra só entra com o V1–V3 respondido. */
@@ -99,7 +108,7 @@ function comporIsq(){
   if (a.tinv === "tem") m.push("tinv");
   if (!m.length && a.sup === "nao" && a.inf === "nao" && a.tinv === "nao") m.push("nenhuma");
   // padrões saem da lista: o "não sei" deles sai junto (senão o 6B fica preso a um item que nem aparece, B1)
-  if (!m.includes("nenhuma")){ delete r.padroes; delete conf.padroes; delete P().ns.pad; delete P().ajuda.pad; }
+  if (!m.includes("nenhuma")){ delete r.padroes; delete conf.padroes; delete P().ns.pad; esquecerAjuda("pad"); }
   if (!m.includes("supra")){ delete r.supraDist; delete r.terr; delete conf.terr; }
   if (m.length){ r.isq = m; marcar("isq"); } else delete r.isq;
   // a etapa 7 só mostra "Alterações" feita com os três respondidos no plantão. Pulado ou "não sei" não vira "não tem":
@@ -128,20 +137,21 @@ function responder(k, v){
   if (k === "hk1" || k === "hk2") addEsp("hiperk");
   if (k === "hpk1" || k === "hpk2") addEsp("hipok");
   if (k === "s1q3t3") addEsp("tep");
-  if (k === "v1" && v === "duvida"){ conf.v1 = true; P().ajuda.v1 = true; }   // no app, "seguir sem padrão definido"
+  if (k === "v1" && v === "duvida"){ conf.v1 = true; P().ajuda.v1 = true; delete rec().v1; }   // no app, "seguir sem padrão definido"
   // as perguntas que o app tem com "não sei identificar" guardam o naosei do app: seguem em aberto
-  if (v === "naosei"){ P().ns[k] = true; P().ajuda[k] = true; }
+  if (v === "naosei"){ P().ns[k] = true; P().ajuda[k] = true; delete rec()[k]; }
+  else if (!(k === "v1" && v === "duvida")) recolherAjuda(k);   // resposta definitiva: a ajuda recolhe
 }
-function naoSei(k){ P().ns[k] = true; P().ajuda[k] = true; }
+function naoSei(k){ P().ns[k] = true; P().ajuda[k] = true; delete rec()[k]; }
 /* "não sei" (e a ajuda) de uma pergunta que deixou de ser feita não pode sobrar (B1, M1): padrões fora da lista, a
    pergunta da etapa 6 que o novo caminho não faz (o B coletor de arritmia(B) diz quais são), V1 sem QRS largo. */
 function podarNs(){
   const p = P(), r = R();
-  if (!padVisivel()){ delete p.ns.pad; delete p.ajuda.pad; delete p.padVer; }
+  if (!padVisivel()){ delete p.ns.pad; esquecerAjuda("pad"); delete p.padVer; }
   const feitas = new Set();
   if (arrVisivel()){ const B = coletor(); A.arritmia(B); B.qs.forEach(q => feitas.add(q.k)); }
-  AJUDA_DE.arr.forEach(k => { if (!feitas.has(k)){ delete p.ns[k]; delete p.ajuda[k]; } });
-  if (!(r.qrs === "largo" && precisaV1())) delete p.ajuda.v1;
+  AJUDA_DE.arr.forEach(k => { if (!feitas.has(k)){ delete p.ns[k]; esquecerAjuda(k); } });
+  if (!(r.qrs === "largo" && precisaV1())) esquecerAjuda("v1");
 }
 const coletor = () => ({qs:[], escolha(k, o){ this.qs.push(Object.assign({k}, o)); }, res(){}, texto(){}, html(){}, multi(){}, medida(){}});
 
@@ -479,6 +489,8 @@ function miolo(){
     cards.filter(c => c.id !== "6B" && p.anc[c.id] === id).forEach(c => { corpo += cartaoHTML(c); });
     tutLivre.filter(a => p.anc["t-" + a.id] === id).forEach(a => { corpo += tutoraHTML(a); });
     if (!emAberto) corpo += ajH;             // respondida, a ajuda fica, mas desce para depois dos cartões
+    const rk = (AJUDA_DE[id] || [id]).filter(k => rec()[k] && !p.ajuda[k] && AJUDA(k === "s1q3t3" ? "tep" : k));
+    if (rk.length) corpo += `<button type="button" class="pl-link pl-ver-ajuda" data-pl-ajuda-ver="${rk.join(",")}">Ver ajuda de novo</button>`;   // a ajuda recolhida, no lugar dela
   });
   // âncora num item que saiu da lista (ex.: padrões depois de mudar o supra): o cartão não some
   cards.filter(c => c.id !== "6B" && !vis.includes(p.anc[c.id])).forEach(c => { soltos.push(cartaoHTML(c)); });
@@ -523,14 +535,14 @@ function cartaoInicio(){
 /* ---------- tocar: responde, redesenha só a tela do plantão e mostra o que o toque abriu ---------- */
 const ITEM_DE = k => ({v1:"qrs", sg1:"qrs", sg2:"qrs", sgST:"qrs", sgS:"qrs", infraV1:"inf", wiz1:"ritmo", wiz2:"ritmo", wiz3:"ritmo", fcFaixa:"fc", di:"eixo", avf:"eixo", dii:"eixo", s1q3t3:"tep",
   extra:"arr", extraQrs:"arr", tq:"arr", pind:"arr", temP:"arr", rel:"arr", bav:"arr", pns:"arr"})[k] || k;
-function responderDoToque(k, v){ responderDoToque0(k, v); podarNs(); }
+function responderDoToque(k, v){ responderDoToque0(k, v); recolherOutros(ITEM_DE(k)); podarNs(); }
 function responderDoToque0(k, v){
   const r = R(), p = P(), conf = A.S.cur.conf;
   if (k === "sup"){
     delete p.ns.sup;
     if (v === "__ns"){ naoSei("sup"); delete p.isqA.sup; delete r.supraDist; delete r.terr; }
-    else if (v === "nao"){ p.isqA.sup = "nao"; delete r.supraDist; delete r.terr; }
-    else if (v === "difuso"){ p.isqA.sup = "tem"; r.supraDist = "difuso"; delete r.terr; }
+    else if (v === "nao"){ p.isqA.sup = "nao"; delete r.supraDist; delete r.terr; recolherAjuda("sup"); }
+    else if (v === "difuso"){ p.isqA.sup = "tem"; r.supraDist = "difuso"; delete r.terr; recolherAjuda("sup"); }
     else {
       p.isqA.sup = "tem";
       if (r.supraDist !== "sim"){ r.supraDist = "sim"; r.terr = []; }
@@ -541,7 +553,7 @@ function responderDoToque0(k, v){
   }
   if (k === "inf" || k === "tinv"){
     if (v === "__ns"){ naoSei(k); delete p.isqA[k]; if (k === "inf") delete r.infraV1; comporIsq(); return; }
-    delete p.ns[k]; p.isqA[k] = v; if (k === "inf" && v === "nao") delete r.infraV1; comporIsq(); return;
+    delete p.ns[k]; p.isqA[k] = v; recolherAjuda(k); if (k === "inf" && v === "nao") delete r.infraV1; comporIsq(); return;
   }
   if (k === "infraV1"){ r.infraV1 = v; marcar("infraV1"); comporIsq(); return; }
   if (k === "pad"){
@@ -549,6 +561,7 @@ function responderDoToque0(k, v){
     delete p.ns.pad; let a = (r.padroes || []).slice();
     if (v === "nenhum") a = a.includes("nenhum") ? [] : ["nenhum"]; else { a = a.filter(x => x !== "nenhum"); a = a.includes(v) ? a.filter(x => x !== v) : a.concat(v); }
     if (a.length){ r.padroes = a; conf.padroes = true; marcar("padroes"); } else { delete r.padroes; delete conf.padroes; }
+    if (a.includes(v)) recolherAjuda("pad");   // "É este: marcar" (ou a marca no botão): recolhe; desmarcar não
     return;
   }
   if (v === "__ns"){ naoSei(k); if (k === "qrs" && "qrs" in r){ A.limpar("qrs"); delete r.qrs; } return; }
@@ -565,7 +578,9 @@ function numero(k, txt){
   if (A.num("sgST") !== null && A.num("sgS") !== null){ A.S.cur.conf.sg3 = true; marcar("sg3"); } else delete A.S.cur.conf.sg3;
 }
 function rolo(){ return document.getElementById("pl-rolo"); }
-const cardsNaTela = () => new Set([...document.querySelectorAll("#pl-rolo [data-card]")].map(e => e.dataset.card));
+const chaveRes = e => "res:" + e.textContent.replace(/\s+/g, " ").trim();
+// os cartões e os resultados na tela antes do toque: o que não estava é o que o toque abriu
+const cardsNaTela = () => new Set([...document.querySelectorAll("#pl-rolo [data-card]")].map(e => e.dataset.card).concat([...document.querySelectorAll("#pl-rolo .pl-res")].map(chaveRes)));
 const reduzido = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 /* redesenha a tela do plantão no lugar (a moldura .screen fica: não reanima), guarda e devolve a rolagem */
 function redesenhar(){
@@ -586,27 +601,44 @@ function redesenhar(){
   return antes;
 }
 function soltarAmpliadas(){ /* nada a soltar: as imagens ampliadas vivem no body e fecham sozinhas */ }
+/* posição sem a animação de entrada (rise sobe o cartão novo 12 px): medir no meio dela errava o alvo */
+function caixa(el){
+  const r = el.getBoundingClientRect(); let dy = 0;
+  try { const t = getComputedStyle(el).transform; if (t && t !== "none") dy = new DOMMatrixReadOnly(t).m42 || 0; } catch(_){}
+  return {top:r.top - dy, bottom:r.bottom - dy, height:r.height};
+}
 // depois de responder: o item e o que ele abriu (cartão, trava, ajuda) ficam à vista
 function focar(id, antes){
   const rl = rolo(); if (!rl) return;
   const it = rl.querySelector(`[data-item="${id}"],[data-pl-reabre="${id}"]`); if (!it) return;
+  const fimBloco = n => n.matches("[data-item],.pl-feito,.pl-nota,.pl-link");
   let alvo = it, n = it.nextElementSibling;
-  while (n && !n.matches("[data-item],.pl-feito,.pl-nota,.pl-link")){
+  while (n && !fimBloco(n)){
     if (!antes.has(n.dataset.card || "") || n.matches(".pl-ajuda,.pl-trava")) alvo = n;
     n = n.nextElementSibling;
   }
-  const a = alvo.getBoundingClientRect(), s = rl.getBoundingClientRect(), i = it.getBoundingClientRect();
-  if (a.bottom <= s.bottom && i.top >= s.top) return;
-  let quer = Math.min(i.top - s.top - 8, a.bottom - s.bottom + 12);
+  const a = caixa(alvo), s = rl.getBoundingClientRect(), i = caixa(it);
+  const jaVisivel = a.bottom <= s.bottom && i.top >= s.top;
+  let quer = jaVisivel ? 0 : Math.min(i.top - s.top - 8, a.bottom - s.bottom + 12);
   // o cartão que o toque acabou de abrir ganha a vez: o topo dele (e um bom pedaço) fica à vista, mesmo que o item suba
   let novo = it.nextElementSibling;
-  while (novo && !(novo.dataset.card && !antes.has(novo.dataset.card)) && !novo.matches("[data-item],.pl-feito,.pl-nota,.pl-link")) novo = novo.nextElementSibling;
-  if (novo && novo.dataset.card && !antes.has(novo.dataset.card)){
-    const n = novo.getBoundingClientRect();
+  while (novo && !(novo.dataset.card && !antes.has(novo.dataset.card)) && !fimBloco(novo)) novo = novo.nextElementSibling;
+  const temNovo = !!novo && !!novo.dataset.card && !antes.has(novo.dataset.card);
+  if (temNovo && !jaVisivel){
+    const nr = caixa(novo);
     // a trava inteira (o aviso dela vem no fim: "nenhuma medicação que bloqueie o nó AV"), mesmo que o item suba
-    const precisa = novo.matches(".pl-trava") ? Math.min(n.bottom - s.bottom + 12, n.top - s.top - 8) : n.top - (s.bottom - Math.min(n.height, s.height * .55));
+    const precisa = novo.matches(".pl-trava") ? Math.min(nr.bottom - s.bottom + 12, nr.top - s.top - 8) : nr.top - (s.bottom - Math.min(nr.height, s.height * .55));
     if (precisa > quer) quer = precisa;
   }
+  // até onde pode subir: item em "não sei" = a pergunta e os botões ficam (ajuste fino, 320 × 568); senão, o topo do cartão novo
+  const naosei = it.matches(".pl-item.naosei"), h3 = naosei && it.querySelector("h3");
+  const teto = h3 ? caixa(h3).top - s.top - 4 : temNovo ? caixa(novo).top - s.top - 8 : i.top - s.top - 8;
+  // ajuste fino: o que o toque abriu mais abaixo (o resultado da arritmia, o 6B) também sobe, até o teto
+  let x = n;
+  while (x && !((x.dataset.card && !antes.has(x.dataset.card)) || (x.matches(".pl-res") && !antes.has(chaveRes(x))))) x = x.nextElementSibling;
+  if (x){ const xr = caixa(x), falta = xr.top + Math.min(xr.height, 120) - s.bottom + 12; if (falta > quer) quer = Math.max(quer, Math.min(falta, teto)); }
+  if (naosei) quer = Math.min(quer, teto);
+  if (Math.abs(quer) < 1) return;
   rl.scrollTo({top:rl.scrollTop + quer, behavior:reduzido() ? "auto" : "smooth"});
 }
 /* cartão 4: quando a linha em destaque muda (sintomas, BAV total/Mobitz II/avançado), a tela vai até ela (Rafael P1-3) */
@@ -643,6 +675,13 @@ function montar(raiz){
     if (el && rl){ const a = el.getBoundingClientRect(), sc = rl.getBoundingClientRect(); if (a.bottom > sc.bottom || a.top < sc.top) rl.scrollTo({top:rl.scrollTop + a.top - sc.top - 70, behavior:reduzido() ? "auto" : "smooth"}); }
   });
   q("[data-pl-fecha-ajuda]").forEach(b => b.onclick = () => { const k = b.dataset.plFechaAjuda, p = P(); delete p.ajuda[k]; if (k === "tep") delete p.ajuda.s1q3t3; redesenhar(); });
+  q("[data-pl-ajuda-ver]").forEach(b => b.onclick = () => {
+    const ks = b.dataset.plAjudaVer.split(","), p = P();
+    ks.forEach(k => { p.ajuda[k] = true; delete rec()[k]; });
+    redesenhar();
+    const el = document.querySelector(`.pl-ajuda[data-ajuda="${ks[0] === "s1q3t3" ? "tep" : ks[0]}"]`), rl = rolo();
+    if (el && rl){ const a = el.getBoundingClientRect(), sc = rl.getBoundingClientRect(); if (a.top < sc.top || a.top > sc.bottom - 120) rl.scrollTo({top:rl.scrollTop + a.top - sc.top - 70, behavior:reduzido() ? "auto" : "smooth"}); }
+  });
   q("[data-pl-ajuda-abre]").forEach(b => b.onclick = () => { const k = b.dataset.plAjudaAbre, p = P(); p.ajuda[k] = !p.ajuda[k]; tocar(k, () => {}); });
   q("[data-pl-somar]").forEach(b => b.onclick = () => { const p = P(); p.somar = !p.somar; redesenhar(); const rl = rolo(); if (p.somar && rl) rl.scrollTo({top:0}); });
   q("[data-pl-soma]").forEach(b => b.onclick = () => { const p = P(); p.queixas.push(b.dataset.plSoma); p.somar = false; redesenhar(); });

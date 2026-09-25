@@ -181,3 +181,12 @@
 .pl-pad[aria-expanded="true"]{border-color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--ink-2);color:var(--ink)}
 .pl-pad-aberto{display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--edge)}
 :root[data-theme="light"] .pl-pad{background:rgba(255,255,255,.6)}
+
+/* ---------- ajuste fino (25/09): a ajuda do "não sei" recolhe ao responder ---------- */
+.pl-ver-ajuda{align-self:flex-start;margin-top:-6px}
+/* 320 px: alerta e trava mais compactos, para caber com a pergunta que os abriu (a trava do nó AV inteira com os botões
+   do QRS à vista; o resultado da arritmia logo abaixo do alerta). Texto igual, só a medida */
+@media (max-width:352px){
+  .pl-atencao{padding:10px 12px;gap:4px}
+  .pl-atencao p{font-size:.82rem;line-height:1.4}
+}
